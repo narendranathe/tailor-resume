@@ -364,11 +364,11 @@ def main() -> None:
 if __name__ == "__main__":
     # Quick smoke test
     sample_blob = """
-Company: ExponentHR
+Company: Acme Corp
 Title: Data Engineer
-Dates: July 2024 – Present
+Dates: Jan 2022 – Present
 
-- Architected governed semantic layer on Microsoft Fabric, cutting support tickets by ~40% and query time from 12s to under 4s.
+- Architected governed semantic layer on data lakehouse, cutting support tickets by ~40% and query time from 12s to under 4s.
 - Compressed deployment cycles from 3 months to 14 days via Azure DevOps CI/CD end-to-end ownership.
 - Reengineered CDC ETL from full-table reloads to incremental merge upserts, cutting runtime from 30 min to 8 min and compute costs by ~67%.
 """

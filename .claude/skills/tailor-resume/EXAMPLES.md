@@ -9,15 +9,15 @@
 JD: [paste job description here]
 
 Experience blob:
-I worked at ExponentHR as a Data Engineer from July 2024 to present.
-I built a semantic layer on Microsoft Fabric using DAX metrics. It cut support tickets
-by ~40% and reduced query times from 12s to under 4s. I also owned CI/CD end-to-end
-through Azure DevOps — we went from 3-month to 14-day deployment cycles. Before that,
-I re-engineered ETL from full-table reloads to CDC incremental capture, cutting runtime
+I worked at Acme Corp as a Data Engineer from July 2022 to present.
+I built a governed semantic layer on our data lakehouse using DAX metrics. It cut support
+tickets by ~40% and reduced query times from 12s to under 4s. I owned CI/CD end-to-end
+through Azure DevOps — deployment cycles went from 3 months to 14 days. I also
+re-engineered ETL from full-table reloads to CDC incremental capture, cutting runtime
 from 30 min to under 8 min and compute costs by ~67%.
 
 LinkedIn PDF: [paste extracted text here]
-GitHub: https://github.com/narendranathe/fraud-detection-ml-platform
+GitHub: https://github.com/your-username/your-project
 ```
 
 ---
@@ -29,10 +29,10 @@ GitHub: https://github.com/narendranathe/fraud-detection-ml-platform
 JD: [paste job description]
 
 Current resume (LaTeX):
-\resumeSubheading{Data Engineer}{July 2024 -- Present}{ExponentHR}{Dallas, TX}
+\resumeSubheading{Data Engineer}{July 2022 -- Present}{Acme Corp}{City, ST}
 \resumeItemListStart
-  \resumeItem{Architected governed semantic layer...}
-  ...
+  \resumeItem{Architected governed semantic layer on data lakehouse with DAX metrics...}
+  \resumeItem{Compressed deployment cycles from 3 months to 14 days via Azure DevOps CI/CD...}
 \resumeItemListEnd
 ```
 
@@ -84,7 +84,7 @@ Output: 4–5 sentence professional summary with 3–4 natural JD keywords
 ```
 /tailor-resume
 
-I have a project at https://github.com/narendranathe/portfolio-risk-analysis.
+I have a project at https://github.com/your-username/your-project.
 Extract achievements I can use in my resume for a Senior Data Engineer role at a fintech company.
 JD: [paste JD]
 ```
@@ -119,7 +119,7 @@ Key metrics I can confirm:
 pdflatex resume.tex
 
 # Overleaf (no local install needed)
-# 1. Upload resume.tex + any supporting files
+# 1. Upload resume.tex and any supporting files
 # 2. Set compiler to pdfLaTeX
 # 3. Build and download PDF
 ```
