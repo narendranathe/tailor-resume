@@ -1,101 +1,127 @@
 ---
 name: tailor-resume
-description: Builds and iteratively improves a resume-tailoring skill that transforms user experience into ATS-optimized, recruiter-readable, single-page resumes aligned to a target job description. Use when user asks to create/build/improve a resume skill, tailor resumes to jobs, extract achievements from artifacts (resume/GitHub/LinkedIn), or generate LaTeX/PDF resumes with factual, quantified bullets.
+description: Builds and iteratively refines ATS-optimized, recruiter-readable, single-page resumes tailored to a target job description. Use when user asks to tailor/build/improve a resume, align experience to a job, generate LaTeX/PDF output, extract achievements from GitHub or LinkedIn, or run a skills gap analysis. Loops until acceptance criteria pass. Never fabricates — only reframes factual evidence.
 ---
 
-# tailor-resume (Resume Builder + ATS Optimizer)
+# tailor-resume
 
 ## Quick start
-1. Ask user for:
-   - Target Job Description (JD)
-   - Current resume (MD/TEX/PDF/DOCX) or pasted blob
-   - Optional LinkedIn PDF + GitHub repo links
-2. Parse artifacts and normalize into structured profile:
-   - roles, projects, outcomes, metrics, tools, domains
-3. Run JD-to-profile gap analysis.
-4. Generate:
-   - skills-gap report
-   - tailored bullets per role (4–6 max per role)
-   - 4–5 sentence summary
-   - ATS-safe single-page LaTeX output
-5. Validate factual integrity (no fabrication) and ask targeted follow-up questions for missing metrics.
+
+Ask the user for:
+
+1. **Job Description** — paste JD text
+2. **Experience artifacts** — one or more of:
+   - Paste a **work experience blob** (free-form text describing roles, projects, outcomes)
+   - Upload/paste current resume (`.tex`, `.md`, `.pdf`, `.docx` text)
+   - Upload/paste **LinkedIn PDF export** text
+   - Share **GitHub repo URLs** (I'll analyze READMEs and project descriptions)
+   - Share Claude project artifacts
+3. **Target context** (optional): target role, company, seniority, location
+
+No personal data is hardcoded in templates — everything is runtime-only.
+
+---
 
 ## Workflow
 
-### 1) Intake & normalization
-- Accept user data separately (never hardcode PII in templates).
-- Supported inputs:
-  - `.md`, `.tex`, `.docx`, `.pdf`, pasted text blobs
-  - LinkedIn PDF
-  - Optional GitHub/Claude project links
-- Build canonical profile JSON:
-  - `experience[]`, `projects[]`, `skills[]`, `education[]`, `certifications[]`
-  - each bullet tagged with `evidence_source` and `confidence`
+### Step 1 — Intake & normalization
+Parse all provided artifacts into a canonical profile JSON:
+```json
+{
+  "experience": [],
+  "projects": [],
+  "skills": [],
+  "education": [],
+  "certifications": []
+}
+```
+Each bullet is tagged with:
+- `evidence_source`: where it came from (blob, resume, LinkedIn, GitHub)
+- `confidence`: high / medium / low
 
-### 2) JD analysis
-Extract:
-- Must-have qualifications
+**Input handling guide:**
+| Input type | What to extract |
+|---|---|
+| Work blob | roles, companies, dates, outcomes, tools, scale signals |
+| LaTeX resume | parse `\resumeItem` and `\resumeSubheading` blocks |
+| Markdown resume | parse `##`, `-` bullet lists by role |
+| LinkedIn PDF text | job titles, dates, descriptions per role |
+| GitHub repos | README project names, tech stack, outcomes |
+
+Ask targeted follow-up questions only when critical metrics are absent.
+
+### Step 2 — JD decomposition
+Extract and rank from the JD:
+- Must-have qualifications (MQs)
 - Core responsibilities
 - Domain/tool signals
-- Seniority/leadership signals
+- Seniority and leadership scope
 - Business outcome expectations
 
-Rank top 5 missing/weak signals.
+Output: **top 5 missing or weak signals** in the user's profile.
 
-### 3) Gap closure with factual integrity
-For each weak signal:
-- Suggest 1–2 candidate achievements from user evidence.
-- If metric missing, ask concise metric prompts:
-  - “What was baseline → outcome?”
-  - “Volume/scale? (rows/day, users, dollars, latency, incidents)”
-- Never invent numbers; allow range phrasing only if user-approved.
+### Step 3 — Gap closure (factual integrity only)
+For each gap:
+- Suggest 1–2 achievement angles grounded in the provided evidence.
+- If a metric is missing, ask targeted prompts:
+  - "What was the baseline → outcome?"
+  - "What was the scale? (rows/day, users, dollars, latency, incidents)"
+- **Never invent numbers.** Range phrasing allowed only if user confirms.
 
-### 4) Resume rewriting rules
-- One page only.
-- Bullet formula: **Accomplished X as measured by Y by doing Z**.
-- 4–6 bullets/role max.
-- Strong action verbs, no keyword stuffing.
+### Step 4 — Resume rewriting rules
+- **Single page only.**
+- Bullet formula: `Accomplished X as measured by Y by doing Z`
+- 4–6 bullets per role maximum.
+- Strong action verbs; no keyword stuffing.
 - Natural JD keyword integration.
-- Standardized job titles when internal title is uncommon.
-- Emphasize progression, ownership, reliability, cost/perf, and business impact.
+- Standardize internal/uncommon job titles to market-recognized equivalents.
+- Emphasize: progression, ownership, reliability, cost/perf wins, business impact.
 
-### 5) ATS + recruiter optimization checks
-- ATS checks:
-  - parsable layout
-  - standard headings
-  - no text boxes/tables for core content
-  - keyword relevance in context
-- Recruiter checks:
-  - first 1/3 page contains strongest role-fit evidence
-  - quantified impact in most bullets
-  - clear progression and scope
+### Step 5 — ATS + recruiter checks
+**ATS:**
+- Parsable structure (no text boxes, no decorative tables for core content)
+- Standard headings: Summary, Experience, Projects, Skills, Education
+- Keywords appear in context, not as pasted lists
 
-### 6) Output generation
-Produce:
-1. Skills gap analysis (bulleted)
-2. Tailored experience bullets
-3. Role-specific summary
-4. Final single-page LaTeX using provided template
-5. PDF Export
+**Recruiter:**
+- Strongest role-fit evidence in top 1/3 of the page
+- Quantified impact in most bullets
+- Clear career progression and scope signals
 
-### 7) Iterative refinement loop (bounded)
-Run up to 3 passes:
-- Pass A: draft
-- Pass B: tighten relevance/metrics
-- Pass C: compress for one-page fit + readability
-Stop early if acceptance criteria met.
+### Step 6 — Output (produce in this order)
+1. Skills gap analysis (bulleted list)
+2. Tailored experience bullets per role
+3. 4–5 sentence professional summary
+4. Final single-page LaTeX (`resume.tex`) using `templates/resume_template.tex`
+5. PDF export instructions (see `scripts/pdf_export.md`)
 
-## Acceptance criteria
-- Single-page LaTeX and PDF output (template-compatible)
-- No embedded personal info in base template
-- Every major bullet has measurable outcome or scope
-- Top JD requirements explicitly reflected
-- No fabricated claims
+### Step 7 — Iterative loop (max 3 passes)
+- **Pass A**: full draft
+- **Pass B**: tighten relevance and fill missing metrics
+- **Pass C**: compress for strict one-page fit
+
+Stop early when all acceptance criteria are satisfied:
+- [ ] Single-page LaTeX output
+- [ ] PDF-export ready
+- [ ] No hardcoded PII in base template
+- [ ] Top JD MQs explicitly reflected
+- [ ] Every key bullet has a measurable outcome or scope signal
+- [ ] Zero fabricated claims
+
+### Step 8 — RAG persistence (optional)
+To save the profile for future tailoring sessions without re-uploading:
+- Embed the canonical profile JSON and store in Pinecone (or SQLite fallback).
+- Use `scripts/rag_store.py` for implementation.
+- On future runs, retrieve the stored profile to skip re-ingestion.
+
+---
 
 ## Data handling
-- User PII provided at runtime only.
-- Support deletion and regeneration.
-- Persist embeddings only with user consent.
+- User PII is **runtime-only** — never embedded in templates or committed to the repo.
+- Profile embeddings stored only with explicit user consent.
+- Supports full regeneration from scratch on request.
 
 ## Advanced features
-See [REFERENCE.md](REFERENCE.md), [EXAMPLES.md](EXAMPLES.md), and `scripts/`.
+See [REFERENCE.md](REFERENCE.md) — 2026 resume philosophy, 4-phase framework, bullet scoring rubric, metric prompts.
+See [EXAMPLES.md](EXAMPLES.md) — example invocations and blob formats.
+See `scripts/` — deterministic helpers for extraction, gap analysis, rendering, RAG, and PDF export.

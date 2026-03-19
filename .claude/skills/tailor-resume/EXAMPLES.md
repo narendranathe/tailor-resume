@@ -1,16 +1,125 @@
 # Usage Examples
 
-## 1) Skills gap analysis
-Analyze this JD and my resume. List top 5 missing or weak signals and suggest 1–2 factual achievement angles per signal.
+---
 
-## 2) Tailored bullet rewrite
-Rewrite my Experience section for this JD. Use strong action verbs, natural keyword usage, and measurable outcomes. Max 5 bullets per role.
+## Example 1 — Full tailoring from scratch
+```
+/tailor-resume
 
-## 3) ATS optimization
-Check ATS compatibility and recruiter readability. Flag red flags and propose concise fixes without fabricating details.
+JD: [paste job description here]
 
-## 4) Summary generation
-Write a 4–5 sentence professional summary aligned to this JD and my experience. Include 3–4 relevant JD terms naturally.
+Experience blob:
+I worked at ExponentHR as a Data Engineer from July 2024 to present.
+I built a semantic layer on Microsoft Fabric using DAX metrics. It cut support tickets
+by ~40% and reduced query times from 12s to under 4s. I also owned CI/CD end-to-end
+through Azure DevOps — we went from 3-month to 14-day deployment cycles. Before that,
+I re-engineered ETL from full-table reloads to CDC incremental capture, cutting runtime
+from 30 min to under 8 min and compute costs by ~67%.
 
-## 5) One-page compression
-Compress this resume to one page while preserving strongest role-fit evidence and quantified impact.
+LinkedIn PDF: [paste extracted text here]
+GitHub: https://github.com/narendranathe/fraud-detection-ml-platform
+```
+
+---
+
+## Example 2 — From existing LaTeX resume
+```
+/tailor-resume
+
+JD: [paste job description]
+
+Current resume (LaTeX):
+\resumeSubheading{Data Engineer}{July 2024 -- Present}{ExponentHR}{Dallas, TX}
+\resumeItemListStart
+  \resumeItem{Architected governed semantic layer...}
+  ...
+\resumeItemListEnd
+```
+
+---
+
+## Example 3 — Skills gap analysis only
+```
+/tailor-resume
+
+Mode: gap analysis only
+
+JD: [paste JD]
+Resume: [paste resume text]
+
+Output: top 5 missing/weak signals + 1-2 factual achievement angles per gap
+```
+
+---
+
+## Example 4 — ATS check only
+```
+/tailor-resume
+
+Mode: ATS + recruiter check
+
+Resume: [paste current resume]
+JD: [paste JD]
+
+Output: flag red flags and propose fixes — no fabrication
+```
+
+---
+
+## Example 5 — Summary generation
+```
+/tailor-resume
+
+Mode: summary only
+
+JD: [paste JD]
+Background: [paste key experiences / skills]
+
+Output: 4–5 sentence professional summary with 3–4 natural JD keywords
+```
+
+---
+
+## Example 6 — GitHub project extraction
+```
+/tailor-resume
+
+I have a project at https://github.com/narendranathe/portfolio-risk-analysis.
+Extract achievements I can use in my resume for a Senior Data Engineer role at a fintech company.
+JD: [paste JD]
+```
+
+---
+
+## Work experience blob format (template)
+Use this format when pasting a work history blob:
+
+```
+Company: [Company Name]
+Title: [Your Title]
+Dates: [Start] – [End or Present]
+Location: [City, State or Remote]
+
+What I built / owned:
+- [Project or system description with scale and tools]
+- [Outcome: what improved, by how much]
+- [Reliability / quality story: tests, incidents prevented, SLA]
+
+Key metrics I can confirm:
+- Baseline: [X] → Outcome: [Y]
+- Scale: [rows/day, users, compute cost, etc.]
+- Team size: [solo / N-person team / cross-functional]
+```
+
+---
+
+## PDF export quick reference
+```bash
+# Local (requires TeX distribution — MiKTeX or TeX Live)
+pdflatex resume.tex
+
+# Overleaf (no local install needed)
+# 1. Upload resume.tex + any supporting files
+# 2. Set compiler to pdfLaTeX
+# 3. Build and download PDF
+```
