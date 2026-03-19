@@ -1,0 +1,193 @@
+{
+  "experience": [
+    {
+      "title": "Senior Data Engineer",
+      "company": "DataWorks Inc",
+      "start": "March 2022",
+      "end": "Present",
+      "location": "",
+      "bullets": [
+        {
+          "text": "Built a governed semantic layer on Azure Databricks with Delta Lake, defining 40+ KPI metrics used by Finance, ML, and BI teams \u2014 cut metric discrepancies from 12 weekly incidents to zero",
+          "metrics": [
+            "from 12 weekly incidents to zero"
+          ],
+          "tools": [
+            "Azure",
+            "Databricks",
+            "Delta Lake"
+          ],
+          "evidence_source": "blob",
+          "confidence": "medium"
+        },
+        {
+          "text": "Owned CI/CD end-to-end through Azure DevOps for 15 data pipelines, compressing deployment cycles from 8 weeks to 6 days and eliminating manual handoff steps",
+          "metrics": [
+            "weeks",
+            "days",
+            "from 8 weeks to 6 days and eliminating manual handoff s"
+          ],
+          "tools": [
+            "Azure",
+            "Azure DevOps",
+            "CI/CD"
+          ],
+          "evidence_source": "blob",
+          "confidence": "high"
+        },
+        {
+          "text": "Reengineered ETL from full-table reloads to CDC incremental merge upserts on Delta Lake, cutting batch runtime from 45 min to under 9 min and compute costs by ~68%",
+          "metrics": [
+            "",
+            "min",
+            "from full-table reloads to CDC incremental merge upserts on Delta ",
+            "from 45 min to under 9 min and compute costs by ~68%"
+          ],
+          "tools": [
+            "Delta Lake"
+          ],
+          "evidence_source": "blob",
+          "confidence": "high"
+        },
+        {
+          "text": "Implemented automated data quality checks (schema validation, freshness, volume anomaly detection), preventing 3 production incidents per quarter and improving stakeholder trust in metrics",
+          "metrics": [],
+          "tools": [],
+          "evidence_source": "blob",
+          "confidence": "low"
+        },
+        {
+          "text": "Migrated Spark jobs to AKS with HPA, consolidating 18 nodes to 4-8 dynamic, reducing monthly cloud spend by $4,100",
+          "metrics": [
+            ""
+          ],
+          "tools": [
+            "Spark"
+          ],
+          "evidence_source": "blob",
+          "confidence": "medium"
+        },
+        {
+          "text": "Baseline: 45 min batch runtime \u2192 Outcome: 9 min (80% reduction)",
+          "metrics": [
+            "",
+            "min"
+          ],
+          "tools": [],
+          "evidence_source": "blob",
+          "confidence": "high"
+        },
+        {
+          "text": "Cost: $4,100/month saved via AKS consolidation",
+          "metrics": [
+            ""
+          ],
+          "tools": [],
+          "evidence_source": "blob",
+          "confidence": "medium"
+        },
+        {
+          "text": "Quality: 0 metric discrepancies vs 12/week baseline",
+          "metrics": [],
+          "tools": [],
+          "evidence_source": "blob",
+          "confidence": "low"
+        },
+        {
+          "text": "Deployment: 8 weeks \u2192 6 days cycle time",
+          "metrics": [
+            "weeks",
+            "days"
+          ],
+          "tools": [],
+          "evidence_source": "blob",
+          "confidence": "high"
+        }
+      ]
+    },
+    {
+      "title": "Data Engineer",
+      "company": "Acme Analytics Corp",
+      "start": "August 2019",
+      "end": "February 2022",
+      "location": "",
+      "bullets": [
+        {
+          "text": "Engineered Azure AI Anomaly Detector pipelines selecting optimal algorithms per time-series profile, achieving 95%+ accuracy across 200+ monitored metrics",
+          "metrics": [
+            ""
+          ],
+          "tools": [
+            "Azure"
+          ],
+          "evidence_source": "blob",
+          "confidence": "medium"
+        },
+        {
+          "text": "Implemented tunable alert thresholds per service, filtering ~300 weekly non-actionable P3 alerts and improving signal-to-noise ratio from 1:6 to 1:1.3",
+          "metrics": [
+            "from 1:6 to 1:1.3"
+          ],
+          "tools": [],
+          "evidence_source": "blob",
+          "confidence": "medium"
+        },
+        {
+          "text": "Built Elasticsearch enterprise search indexing 150K+ internal documents, reducing support desk volume by ~75% through self-serve query resolution",
+          "metrics": [
+            ""
+          ],
+          "tools": [
+            "Elasticsearch"
+          ],
+          "evidence_source": "blob",
+          "confidence": "medium"
+        },
+        {
+          "text": "Developed Python ETL framework with Pytest unit tests and GitHub Actions CI, reducing production data defects by 40% year-over-year",
+          "metrics": [
+            ""
+          ],
+          "tools": [
+            "Python",
+            "Pytest",
+            "GitHub Actions"
+          ],
+          "evidence_source": "blob",
+          "confidence": "medium"
+        },
+        {
+          "text": "Alert noise: 300 weekly non-actionable alerts eliminated",
+          "metrics": [],
+          "tools": [],
+          "evidence_source": "blob",
+          "confidence": "low"
+        },
+        {
+          "text": "Search: 150K+ documents indexed, 75% support ticket reduction",
+          "metrics": [
+            ""
+          ],
+          "tools": [],
+          "evidence_source": "blob",
+          "confidence": "medium"
+        },
+        {
+          "text": "Defects: 40% reduction via testing and CI/CD",
+          "metrics": [
+            ""
+          ],
+          "tools": [
+            "CI/CD"
+          ],
+          "evidence_source": "blob",
+          "confidence": "medium"
+        }
+      ]
+    }
+  ],
+  "projects": [],
+  "skills": [],
+  "education": [],
+  "certifications": []
+}

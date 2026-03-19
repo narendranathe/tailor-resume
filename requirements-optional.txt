@@ -1,0 +1,8 @@
+# Optional — install to enable cloud RAG persistence and semantic embeddings
+# Usage: pip install -r requirements-optional.txt
+
+# Pinecone cloud vector store (primary RAG backend)
+pinecone-client>=3.0
+
+# OpenAI text-embedding-3-small (semantic search; falls back to TF-IDF if absent)
+openai>=1.0

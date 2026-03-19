@@ -1,0 +1,7 @@
+# Core — stdlib only, zero external dependencies for parsing, analysis, and rendering
+# Python 3.11+ required
+
+# Dev / testing
+pytest>=7.4
+pytest-cov>=4.1
+ruff>=0.4

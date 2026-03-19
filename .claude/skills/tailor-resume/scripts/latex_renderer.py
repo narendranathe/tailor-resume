@@ -41,7 +41,7 @@ def escape(text: str) -> str:
 
 
 def escape_url(url: str) -> str:
-    """URLs go inside \href — only escape % and # outside the url arg."""
+    """URLs go inside href — only escape % and # outside the url arg."""
     return url
 
 

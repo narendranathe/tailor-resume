@@ -1,0 +1,43 @@
+Senior Data Engineer
+Location: Remote / Austin, TX
+Type: Full-time
+
+About the Role
+We are looking for a Senior Data Engineer to join our Data Platform team. You will own
+the design, implementation, and reliability of our core data infrastructure — the pipelines,
+orchestration, and semantic layer that power analytics, ML, and business intelligence.
+
+Responsibilities
+- Design and maintain production Airflow DAGs for batch and streaming data pipelines
+- Build and own data quality frameworks using Great Expectations or Monte Carlo
+- Implement CI/CD pipelines for data assets using GitHub Actions or Azure DevOps
+- Develop governed semantic layer with clear metric definitions for Finance, ML, and BI teams
+- Optimize Spark jobs for performance: partition pruning, broadcast joins, cost reduction
+- Own Delta Lake table management: compaction, Z-ordering, schema enforcement
+- Collaborate with Data Scientists to ensure ML-ready, retrieval-ready datasets
+- Define and enforce data contracts to prevent bad data from reaching downstream consumers
+- Set and monitor SLAs for pipeline reliability, freshness, and data quality
+
+Required Qualifications
+- 4+ years of data engineering experience
+- Strong Python and SQL skills
+- Production experience with Airflow or Dagster orchestration
+- Experience with cloud platforms: AWS, Azure, or GCP
+- Hands-on with distributed compute: Spark, Databricks, or equivalent
+- CI/CD ownership for data code (GitHub Actions, Azure DevOps, or similar)
+- Data quality tooling: Great Expectations, Monte Carlo, Soda, or custom frameworks
+- Experience with data contracts and schema enforcement
+
+Preferred Qualifications
+- Delta Lake or Apache Iceberg experience
+- dbt for semantic layer or data transformation
+- Observability: Prometheus, Grafana, or equivalent monitoring
+- Experience with streaming pipelines: Kafka, Kinesis, or Flink
+- FinOps mindset: cloud cost optimization and compute efficiency
+- Machine learning platform or feature store experience
+
+What We Offer
+- Competitive salary and equity
+- Fully remote with occasional team offsites
+- Learning budget and conference attendance
+- Comprehensive health benefits
