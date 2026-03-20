@@ -6,13 +6,20 @@ _SCRIPTS = os.path.join(_REPO, '.claude', 'skills', 'tailor-resume', 'scripts')
 if _SCRIPTS not in sys.path:
     sys.path.insert(0, _SCRIPTS)
 
+import importlib
 import streamlit as st
+from text_utils import profile_dict_to_text
+from dataclasses import asdict
+
+# Force profile_extractor to load from _SCRIPTS path so we always get the
+# latest version even if tailor_resume/__init__.py already cached an older one.
+if "profile_extractor" in sys.modules and not hasattr(sys.modules["profile_extractor"], "parse_pdf"):
+    del sys.modules["profile_extractor"]
+
 from profile_extractor import (
     parse_blob, parse_markdown, parse_latex, parse_linkedin,
     parse_pdf, parse_docx, auto_detect_format,
 )
-from text_utils import profile_dict_to_text
-from dataclasses import asdict
 
 _TEXT_PARSERS = {
     "auto": None,

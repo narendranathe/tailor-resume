@@ -17,7 +17,10 @@ _SCRIPTS = os.path.join(os.path.dirname(__file__), "_scripts")
 if _SCRIPTS not in sys.path:
     sys.path.insert(0, _SCRIPTS)
 
-from profile_extractor import parse_blob, parse_markdown, parse_latex, parse_linkedin  # noqa: E402
+from profile_extractor import (  # noqa: E402
+    parse_blob, parse_markdown, parse_latex, parse_linkedin,
+    parse_pdf, parse_docx, auto_detect_format,
+)
 from jd_gap_analyzer import run_analysis  # noqa: E402
 from latex_renderer import build_from_profile  # noqa: E402
 from cli import main as _pipeline_main  # noqa: E402
