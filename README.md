@@ -70,9 +70,31 @@ This single command:
 
 Restart Claude Code once. The skill and MCP tools are then available in every project.
 
+### Auto-invoke from natural language (optional)
+
+Add this section to your global `~/.claude/CLAUDE.md` so Claude invokes the skill automatically when you mention resume work — no slash command needed:
+
+```markdown
+## Auto-invoke skills
+
+When the user expresses any of the following intents, immediately invoke the `/tailor-resume` skill
+without waiting to be asked — do not respond conversationally first:
+
+- Editing, updating, or improving a resume or CV
+- Tailoring a resume to a job description or role
+- Skills gap analysis against a job posting
+- Generating a LaTeX or PDF resume
+- Extracting achievements from LinkedIn, GitHub, or a work history blob
+- Aligning experience to a job description
+
+The skill is at `~/.claude/skills/tailor-resume/`. Invoke it with `/tailor-resume`.
+```
+
+After adding this, saying **"edit my resume"** or **"tailor this to the JD"** in any Claude Code session triggers the skill immediately.
+
 ### Use the skill
 
-Once activated, invoke the skill from any Claude Code chat:
+Or invoke explicitly from any Claude Code chat:
 
 ```
 /tailor-resume
