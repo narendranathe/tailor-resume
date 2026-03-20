@@ -1,8 +1,12 @@
-# Core — stdlib only, zero external dependencies for parsing, analysis, and rendering
+# Core — stdlib only for parsing/analysis/rendering
 # Python 3.11+ required
 
 # Streamlit web app (also used by Streamlit Community Cloud)
 streamlit>=1.32.0
+
+# File parsing — PDF and DOCX upload support
+pypdf>=4.0
+python-docx>=1.0
 
 # Dev / testing
 pytest>=7.4
