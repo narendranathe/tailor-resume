@@ -22,8 +22,11 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: pip
 
-      - name: Install dependencies
+      - name: Install core dependencies
         run: pip install -r requirements.txt
+
+      - name: Install optional dependencies (mcp, pinecone, openai)
+        run: pip install -r requirements-optional.txt
 
       - name: Lint with ruff
         run: python -m ruff check .claude/skills/tailor-resume/scripts/ tests/

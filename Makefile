@@ -6,17 +6,23 @@ TEMPLATES   := .claude/skills/tailor-resume/templates
 FIXTURES    := fixtures
 OUT         := out
 
-.PHONY: setup setup-all demo test lint render clean help
+MCP_SERVER  := $(SCRIPTS)/mcp_server.py
+MCP_GLOBAL  := $(HOME)/.claude/.mcp.json
+
+.PHONY: setup setup-all demo test test-cov lint render mcp-serve mcp-install-global clean help
 
 help:
 	@echo "Available targets:"
-	@echo "  setup      Install core dev dependencies (pytest, ruff)"
-	@echo "  setup-all  Install core + optional deps (pinecone, openai)"
-	@echo "  demo       Run the full pipeline on sample fixtures -> $(OUT)/resume.tex"
-	@echo "  test       Run the test suite"
-	@echo "  lint       Run ruff on scripts and tests"
-	@echo "  render     Compile $(OUT)/resume.tex to PDF (requires pdflatex)"
-	@echo "  clean      Remove generated output files"
+	@echo "  setup                Install core dev dependencies (pytest, ruff)"
+	@echo "  setup-all            Install core + optional deps (pinecone, openai, mcp)"
+	@echo "  demo                 Run the full pipeline on sample fixtures -> $(OUT)/resume.tex"
+	@echo "  test                 Run the test suite"
+	@echo "  test-cov             Run tests with coverage report"
+	@echo "  lint                 Run ruff on scripts and tests"
+	@echo "  render               Compile $(OUT)/resume.tex to PDF (requires pdflatex)"
+	@echo "  mcp-serve            Start the MCP server over stdio (for manual testing)"
+	@echo "  mcp-install-global   Register MCP server in ~/.claude/.mcp.json"
+	@echo "  clean                Remove generated output files"
 
 setup:
 	$(PYTHON) -m pip install -r requirements.txt
@@ -59,6 +65,13 @@ $(OUT):
 render: $(OUT)/resume.tex
 	pdflatex -output-directory $(OUT) $(OUT)/resume.tex
 	@echo "PDF written to $(OUT)/resume.pdf"
+
+mcp-serve:
+	@echo "Starting tailor-resume MCP server (stdio). Press Ctrl+C to stop."
+	$(PYTHON) $(MCP_SERVER)
+
+mcp-install-global:
+	$(PYTHON) scripts/install_mcp_global.py
 
 clean:
 	rm -rf $(OUT)/
