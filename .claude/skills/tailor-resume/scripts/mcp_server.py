@@ -23,30 +23,29 @@ Config in .claude/.mcp.json:
 """
 from __future__ import annotations
 
+import io
 import json
 import sys
-import tempfile
+from contextlib import redirect_stdout
 from dataclasses import asdict
 from pathlib import Path
-from typing import Optional
 
 # Make sibling scripts importable when run from repo root
 _SCRIPTS = Path(__file__).parent
 if str(_SCRIPTS) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS))
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp import FastMCP  # noqa: E402
 
-from jd_gap_analyzer import run_analysis
-from latex_renderer import build_from_profile
-from profile_extractor import (
-    merge_profiles,
+from jd_gap_analyzer import run_analysis  # noqa: E402
+from latex_renderer import build_from_profile  # noqa: E402
+from profile_extractor import (  # noqa: E402
     parse_blob,
     parse_latex,
     parse_linkedin,
     parse_markdown,
 )
-from resume_types import profile_to_dict
+from resume_types import profile_to_dict  # noqa: E402
 
 mcp = FastMCP("tailor-resume")
 
@@ -80,12 +79,18 @@ def extract_profile(text: str, format: str = "blob") -> str:  # noqa: A002
         JSON string with keys: experience, projects, skills, education, certifications.
         Each experience role has: title, company, start, end, location, bullets.
         Each bullet has: text, metrics, tools, evidence_source, confidence.
+        On error: {"error": "<message>"}
     """
-    fmt = format.lower()
-    if fmt not in _PARSERS:
-        return json.dumps({"error": f"Unknown format '{fmt}'. Use: {list(_PARSERS)}"})
-    profile = _PARSERS[fmt](text)
-    return json.dumps(asdict(profile), indent=2)
+    try:
+        if not text or not text.strip():
+            return json.dumps({"error": "text must not be empty"})
+        fmt = format.lower()
+        if fmt not in _PARSERS:
+            return json.dumps({"error": f"unknown format: {format}. Use: {list(_PARSERS)}"})
+        profile = _PARSERS[fmt](text)
+        return json.dumps(asdict(profile), indent=2)
+    except Exception as exc:
+        return json.dumps({"error": str(exc)})
 
 
 # ---------------------------------------------------------------------------
@@ -111,9 +116,17 @@ def analyze_gap(jd_text: str, resume_text: str, top_n: int = 5) -> str:
             and suggested_angles (concrete prompts for filling the gap)
           - keyword_gaps: list of [keyword, jd_frequency] pairs missing from resume
           - recommendations: list of actionable strings
+          On error: {"error": "<message>"}
     """
-    report = run_analysis(jd_text, resume_text, top_n=top_n)
-    return json.dumps(asdict(report), indent=2)
+    try:
+        if not jd_text or not jd_text.strip():
+            return json.dumps({"error": "jd_text must not be empty"})
+        if not resume_text or not resume_text.strip():
+            return json.dumps({"error": "resume_text must not be empty"})
+        report = run_analysis(jd_text, resume_text, top_n=top_n)
+        return json.dumps(asdict(report), indent=2)
+    except Exception as exc:
+        return json.dumps({"error": str(exc)})
 
 
 # ---------------------------------------------------------------------------
@@ -149,38 +162,34 @@ def render_latex(
           - output_path: absolute path to the written .tex file
           - warnings: list of any unfilled placeholder warnings
           - message: human-readable status
+          On error: {"error": "<message>"}
     """
     try:
-        profile = json.loads(profile_json)
-    except json.JSONDecodeError as e:
-        return json.dumps({"error": f"Invalid profile JSON: {e}"})
+        if not profile_json or not profile_json.strip():
+            return json.dumps({"error": "profile_json must not be empty"})
+        try:
+            profile = json.loads(profile_json)
+        except json.JSONDecodeError as e:
+            return json.dumps({"error": f"invalid profile JSON: {e}"})
 
-    header = {
-        "name": name,
-        "email": email,
-        "phone": phone,
-        "linkedin": linkedin,
-        "github": github,
-        "portfolio": portfolio,
-    }
+        header = {
+            "name": name, "email": email, "phone": phone,
+            "linkedin": linkedin, "github": github, "portfolio": portfolio,
+        }
 
-    # Capture warnings by temporarily redirecting stdout
-    import io
-    from contextlib import redirect_stdout
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            build_from_profile(profile, _DEFAULT_TEMPLATE, output_path, header)
 
-    buf = io.StringIO()
-    with redirect_stdout(buf):
-        build_from_profile(profile, _DEFAULT_TEMPLATE, output_path, header)
-
-    stdout = buf.getvalue()
-    warnings = [ln for ln in stdout.splitlines() if "WARNING" in ln]
-    abs_path = str(Path(output_path).resolve())
-
-    return json.dumps({
-        "output_path": abs_path,
-        "warnings": warnings,
-        "message": f"Resume written to {abs_path}. Compile with pdflatex or upload to Overleaf.",
-    }, indent=2)
+        warnings = [ln for ln in buf.getvalue().splitlines() if "WARNING" in ln]
+        abs_path = str(Path(output_path).resolve())
+        return json.dumps({
+            "output_path": abs_path,
+            "warnings": warnings,
+            "message": f"Resume written to {abs_path}. Compile with pdflatex or upload to Overleaf.",
+        }, indent=2)
+    except Exception as exc:
+        return json.dumps({"error": str(exc)})
 
 
 # ---------------------------------------------------------------------------
@@ -219,42 +228,44 @@ def run_pipeline(
           - gap_report: dict with ats_score_estimate, top_missing, keyword_gaps, recommendations
           - output_path: absolute path to written resume.tex
           - warnings: any render warnings
+          On error: {"error": "<message>"}
     """
-    fmt = artifact_format.lower()
-    if fmt not in _PARSERS:
-        return json.dumps({"error": f"Unknown format '{fmt}'. Use: {list(_PARSERS)}"})
+    try:
+        if not jd_text or not jd_text.strip():
+            return json.dumps({"error": "jd_text must not be empty"})
+        if not artifact_text or not artifact_text.strip():
+            return json.dumps({"error": "artifact_text must not be empty"})
+        fmt = artifact_format.lower()
+        if fmt not in _PARSERS:
+            return json.dumps({"error": f"unknown format: {artifact_format}. Use: {list(_PARSERS)}"})
 
-    # 1. Parse
-    profile = _PARSERS[fmt](artifact_text)
-    profile_dict = profile_to_dict(profile)
+        # 1. Parse
+        profile = _PARSERS[fmt](artifact_text)
+        profile_dict = profile_to_dict(profile)
 
-    # 2. Gap analysis
-    resume_text = json.dumps(profile_dict)
-    report = run_analysis(jd_text, resume_text, top_n=top_gaps)
-    report_dict = asdict(report)
+        # 2. Gap analysis
+        resume_text = json.dumps(profile_dict)
+        report = run_analysis(jd_text, resume_text, top_n=top_gaps)
+        report_dict = asdict(report)
 
-    # 3. Render
-    header = {
-        "name": name, "email": email, "phone": phone,
-        "linkedin": linkedin, "github": github, "portfolio": portfolio,
-    }
+        # 3. Render
+        header = {
+            "name": name, "email": email, "phone": phone,
+            "linkedin": linkedin, "github": github, "portfolio": portfolio,
+        }
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            build_from_profile(profile_dict, _DEFAULT_TEMPLATE, output_path, header)
 
-    import io
-    from contextlib import redirect_stdout
-
-    buf = io.StringIO()
-    with redirect_stdout(buf):
-        build_from_profile(profile_dict, _DEFAULT_TEMPLATE, output_path, header)
-
-    stdout = buf.getvalue()
-    warnings = [ln for ln in stdout.splitlines() if "WARNING" in ln]
-
-    return json.dumps({
-        "profile": profile_dict,
-        "gap_report": report_dict,
-        "output_path": str(Path(output_path).resolve()),
-        "warnings": warnings,
-    }, indent=2)
+        warnings = [ln for ln in buf.getvalue().splitlines() if "WARNING" in ln]
+        return json.dumps({
+            "profile": profile_dict,
+            "gap_report": report_dict,
+            "output_path": str(Path(output_path).resolve()),
+            "warnings": warnings,
+        }, indent=2)
+    except Exception as exc:
+        return json.dumps({"error": str(exc)})
 
 
 if __name__ == "__main__":
