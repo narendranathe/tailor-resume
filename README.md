@@ -1,10 +1,34 @@
 # tailor-resume
 
 [![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://tailor-resume.streamlit.app)
+[![CI](https://github.com/narendranathe/tailor-resume/actions/workflows/ci.yml/badge.svg)](https://github.com/narendranathe/tailor-resume/actions/workflows/ci.yml)
 
 ATS-optimized, recruiter-ready, single-page resume tailoring — powered by Claude Code.
 
 Paste a job description and your work history. Get a tailored LaTeX resume with quantified bullets, skills gap analysis, and ATS score — in minutes. No fabrication. No templates with your name baked in.
+
+---
+
+## Project Status
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| Core pipeline (parse → gap → render) | ✅ Done | stdlib only, 190 tests |
+| Claude Code skill (`/tailor-resume`) | ✅ Done | per-project + global install |
+| MCP plugin (4 typed tools) | ✅ Done | stdio, auto-registered |
+| ATS Relevance Gate | ✅ Done | ≥80→97+, 60-79→90+, <50→decline |
+| `make install-global` | ✅ Done | one-command global install |
+| Auto-invoke from natural language | ✅ Done | CLAUDE.md hook |
+| Streamlit web app (3-tab UI) | ✅ Done | profile→tailor→download + save/load |
+| Hosted MCP server (Fly.io) | ✅ Done | Dockerfile + fly.toml + CI deploy |
+| SQLite profile save/load | ✅ Done | sidebar in Streamlit app |
+| 2026 DE 4-phase standards in SKILL.md | ✅ Done | consolidated with resume_instructions.md |
+| GitHub Actions CI | ✅ Done | lint + test on push |
+| **PyPI package (`pip install tailor-resume`)** | 📋 Pending | publish scripts as installable package |
+| **Streamlit Community Cloud deploy** | 📋 Pending | push to cloud, set main file, configure secrets |
+| **Fly.io MCP deploy** | 📋 Pending | `fly deploy` — needs `FLY_API_TOKEN` secret |
+| **Option E: VS Code extension** | 💡 Idea | native editor integration |
+| **Batch tailoring (multi-JD)** | 💡 Idea | run against N JDs, output ranked `.tex` files |
 
 ---
 
