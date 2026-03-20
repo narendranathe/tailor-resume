@@ -1,5 +1,13 @@
 import sys, os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '.claude', 'skills', 'tailor-resume', 'scripts'))
+
+# Add pipeline scripts to path (absolute so it works on Streamlit Cloud)
+_HERE = os.path.dirname(os.path.abspath(__file__))
+_REPO = os.path.dirname(_HERE)
+_SCRIPTS = os.path.join(_REPO, '.claude', 'skills', 'tailor-resume', 'scripts')
+_TABS = os.path.join(_HERE, 'tabs')
+for _p in (_SCRIPTS, _TABS):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
 
 import json
 import streamlit as st
@@ -45,7 +53,7 @@ with st.sidebar:
 st.title("tailor-resume")
 st.caption("ATS-optimized resume tailoring powered by the tailor-resume pipeline")
 
-from streamlit_app.tabs import profile_tab, tailor_tab, download_tab
+import profile_tab, tailor_tab, download_tab
 
 tab1, tab2, tab3 = st.tabs(["📄 Profile", "🎯 Tailor", "⬇️ Download"])
 

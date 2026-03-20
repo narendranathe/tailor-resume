@@ -1,5 +1,11 @@
 import sys, os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '.claude', 'skills', 'tailor-resume', 'scripts'))
+
+_HERE = os.path.dirname(os.path.abspath(__file__))
+_REPO = os.path.dirname(os.path.dirname(_HERE))
+_SCRIPTS = os.path.join(_REPO, '.claude', 'skills', 'tailor-resume', 'scripts')
+if _SCRIPTS not in sys.path:
+    sys.path.insert(0, _SCRIPTS)
+
 import streamlit as st
 from profile_extractor import parse_blob, parse_markdown, parse_latex, parse_linkedin
 from text_utils import profile_dict_to_text

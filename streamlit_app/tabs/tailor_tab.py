@@ -1,10 +1,16 @@
 import sys, os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '.claude', 'skills', 'tailor-resume', 'scripts'))
+
+_HERE = os.path.dirname(os.path.abspath(__file__))
+_REPO = os.path.dirname(os.path.dirname(_HERE))
+_SCRIPTS = os.path.join(_REPO, '.claude', 'skills', 'tailor-resume', 'scripts')
+if _SCRIPTS not in sys.path:
+    sys.path.insert(0, _SCRIPTS)
+
 import streamlit as st
 from jd_gap_analyzer import run_analysis
 from latex_renderer import build_from_profile
 from dataclasses import asdict
-import json, tempfile
+import tempfile
 from pathlib import Path
 
 def render():
@@ -35,12 +41,16 @@ def render():
                 st.subheader("Top Gaps")
                 rows = [{"Category": g["category"], "Coverage": f"{g['resume_coverage']:.0%}", "Priority": g["priority"]} for g in report["top_missing"]]
                 st.dataframe(rows, use_container_width=True)
-            # Build .tex
+            # Build .tex — build_from_profile writes to a file, so use a temp path then read back
             profile = st.session_state.profile_dict
             header = {"name": name or "Candidate", "email": email or ""}
             try:
-                tmpl_path = os.path.join(os.path.dirname(__file__), '..', '..', '.claude', 'skills', 'tailor-resume', 'templates', 'resume_template.tex')
-                tex = build_from_profile(profile, header=header, template_path=tmpl_path)
+                tmpl_path = os.path.join(_REPO, '.claude', 'skills', 'tailor-resume', 'templates', 'resume_template.tex')
+                with tempfile.NamedTemporaryFile(suffix='.tex', delete=False, mode='w') as tf:
+                    tmp_path = tf.name
+                build_from_profile(profile, template_path=tmpl_path, output_path=tmp_path, header=header)
+                tex = Path(tmp_path).read_text(encoding='utf-8')
+                os.unlink(tmp_path)
                 st.session_state.tailored_tex = tex
                 st.success("Resume tailored! Go to the Download tab.")
             except Exception as e:
