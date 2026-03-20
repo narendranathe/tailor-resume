@@ -5,8 +5,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent / ".claude/skills/tailor-resume/scripts"))
 
 from jd_gap_analyzer import (
-    tokenize,
-    extract_phrases,
     analyze_category_coverage,
     build_gap_signals,
     keyword_gaps,
@@ -14,6 +12,7 @@ from jd_gap_analyzer import (
     run_analysis,
     GapSignal,
 )
+from text_utils import tokenize, extract_phrases
 
 JD_RICH = """
 We are looking for a Senior Data Engineer with strong experience in Airflow orchestration,

@@ -10,25 +10,11 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 from collections import Counter
-from dataclasses import asdict, dataclass
 from typing import Dict, List, Tuple
 
-
-# ---------------------------------------------------------------------------
-# Stopwords
-# ---------------------------------------------------------------------------
-STOPWORDS = {
-    "the", "and", "for", "with", "from", "that", "this", "into", "your",
-    "you", "our", "are", "have", "has", "was", "were", "will", "can", "not",
-    "using", "use", "job", "role", "work", "team", "strong", "experience",
-    "ability", "skill", "skills", "knowledge", "understanding", "preferred",
-    "required", "plus", "bonus", "nice", "good", "excellent", "great",
-    "must", "minimum", "years", "year", "related", "relevant", "various",
-    "including", "such", "etc", "well", "also", "both", "other", "new",
-    "all", "any", "its", "may", "what", "how", "who", "able", "help",
-}
+from resume_types import GapReport, GapSignal
+from text_utils import tokenize
 
 
 # ---------------------------------------------------------------------------
@@ -83,68 +69,6 @@ SIGNAL_TAXONOMY: Dict[str, List[str]] = {
 }
 
 
-# ---------------------------------------------------------------------------
-# Data structures
-# ---------------------------------------------------------------------------
-@dataclass
-class GapSignal:
-    category: str
-    jd_keywords: List[str]
-    jd_frequency: int
-    resume_coverage: float        # 0.0 – 1.0
-    priority: str                 # high | medium | low
-    suggested_angles: List[str]
-
-
-@dataclass
-class GapReport:
-    top_missing: List[GapSignal]
-    keyword_gaps: List[Tuple[str, int]]   # (keyword, jd_freq) missing from resume
-    ats_score_estimate: int               # 0-100 rough estimate
-    recommendations: List[str]
-
-
-# ---------------------------------------------------------------------------
-# Tokenizer
-# ---------------------------------------------------------------------------
-def tokenize(text: str) -> List[str]:
-    tokens = re.findall(r"[a-zA-Z][a-zA-Z0-9\-/+.#]*", text.lower())
-    return [t for t in tokens if t not in STOPWORDS and len(t) > 2]
-
-
-def extract_phrases(text: str, n: int = 2) -> List[str]:
-    """Extract n-grams for multi-word signal detection."""
-    words = text.lower().split()
-    return [" ".join(words[i:i+n]) for i in range(len(words) - n + 1)]
-
-
-# ---------------------------------------------------------------------------
-# Core analysis
-# ---------------------------------------------------------------------------
-def analyze_category_coverage(
-    jd_text: str, resume_text: str
-) -> Dict[str, Dict]:
-    """Score each signal category based on JD presence vs resume coverage."""
-    jd_lower = jd_text.lower()
-    resume_lower = resume_text.lower()
-    results = {}
-
-    for category, keywords in SIGNAL_TAXONOMY.items():
-        jd_hits = [kw for kw in keywords if kw in jd_lower]
-        resume_hits = [kw for kw in jd_hits if kw in resume_lower]
-        jd_freq = sum(jd_lower.count(kw) for kw in jd_hits)
-        coverage = len(resume_hits) / len(jd_hits) if jd_hits else 1.0
-
-        results[category] = {
-            "jd_keywords": jd_hits,
-            "jd_frequency": jd_freq,
-            "resume_coverage": round(coverage, 2),
-            "missing_keywords": [kw for kw in jd_hits if kw not in resume_lower],
-        }
-
-    return results
-
-
 SUGGESTED_ANGLES: Dict[str, List[str]] = {
     "testing_ci_cd": [
         "Describe a test suite you built (language, scope, incident reduction).",
@@ -187,6 +111,33 @@ SUGGESTED_ANGLES: Dict[str, List[str]] = {
         "Quantify query performance improvements from schema/index changes.",
     ],
 }
+
+
+# ---------------------------------------------------------------------------
+# Core analysis
+# ---------------------------------------------------------------------------
+def analyze_category_coverage(
+    jd_text: str, resume_text: str
+) -> Dict[str, Dict]:
+    """Score each signal category based on JD presence vs resume coverage."""
+    jd_lower = jd_text.lower()
+    resume_lower = resume_text.lower()
+    results = {}
+
+    for category, keywords in SIGNAL_TAXONOMY.items():
+        jd_hits = [kw for kw in keywords if kw in jd_lower]
+        resume_hits = [kw for kw in jd_hits if kw in resume_lower]
+        jd_freq = sum(jd_lower.count(kw) for kw in jd_hits)
+        coverage = len(resume_hits) / len(jd_hits) if jd_hits else 1.0
+
+        results[category] = {
+            "jd_keywords": jd_hits,
+            "jd_frequency": jd_freq,
+            "resume_coverage": round(coverage, 2),
+            "missing_keywords": [kw for kw in jd_hits if kw not in resume_lower],
+        }
+
+    return results
 
 
 def build_gap_signals(
@@ -322,22 +273,8 @@ def main() -> None:
 
     print("\n=== Recommendations ===")
     for rec in report.recommendations:
-        print(f"  • {rec}")
+        print(f"  \u2022 {rec}")
 
 
 if __name__ == "__main__":
-    # Quick smoke test
-    jd = """
-We are looking for a Senior Data Engineer with strong experience in Airflow orchestration,
-data quality frameworks (Great Expectations or Monte Carlo), CI/CD pipelines, and Spark
-performance tuning. You will own the semantic layer and build governed metric definitions
-used by finance, ML, and BI teams. Strong Python and SQL skills required.
-Must have experience with Delta Lake or Iceberg and cost optimization on cloud platforms.
-"""
-    resume = """
-Data Engineer with experience in Python, SQL, Azure, Microsoft Fabric, DAX metrics,
-CI/CD through Azure DevOps, CDC-based ETL, AKS autoscaling, and anomaly detection pipelines.
-Built real-time competitor analytics and Elasticsearch enterprise search.
-"""
-    report = run_analysis(jd, resume, top_n=5)
-    print(json.dumps(asdict(report), indent=2))
+    main()

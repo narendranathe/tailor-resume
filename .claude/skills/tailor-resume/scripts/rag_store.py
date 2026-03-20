@@ -29,25 +29,26 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+try:
+    from typing import Protocol, runtime_checkable
+except ImportError:
+    from typing_extensions import Protocol, runtime_checkable  # type: ignore
+
+from text_utils import profile_dict_to_text
+
+# Backward-compatible alias (used by tests and internal callers)
+_profile_to_text = profile_dict_to_text
+
 
 # ---------------------------------------------------------------------------
-# Embedding
+# Store protocol
 # ---------------------------------------------------------------------------
-
-def _profile_to_text(profile: Dict) -> str:
-    """Flatten a profile dict to searchable text."""
-    parts: List[str] = []
-    for role in profile.get("experience", []):
-        parts.append(f"{role.get('title', '')} at {role.get('company', '')}")
-        for b in role.get("bullets", []):
-            parts.append(b.get("text", ""))
-    for proj in profile.get("projects", []):
-        parts.append(proj.get("name", ""))
-        for b in proj.get("bullets", []):
-            parts.append(b.get("text", ""))
-    parts.extend(profile.get("skills", []))
-    parts.extend(profile.get("certifications", []))
-    return " ".join(parts)
+@runtime_checkable
+class BaseStore(Protocol):
+    def store(self, user_id: str, profile: Dict, metadata: Optional[Dict] = None) -> str: ...
+    def query(self, user_id: str, query_text: str, top_k: int = 3) -> List[Dict]: ...
+    def delete(self, user_id: str) -> None: ...
+    def list_users(self) -> List[str]: ...
 
 
 def _embed_openai(text: str, api_key: str) -> List[float]:

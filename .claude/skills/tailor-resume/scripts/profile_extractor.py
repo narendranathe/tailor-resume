@@ -13,100 +13,10 @@ from __future__ import annotations
 import argparse
 import json
 import re
-from dataclasses import asdict, dataclass, field
-from typing import Dict, List, Optional
+from typing import Optional
 
-
-# ---------------------------------------------------------------------------
-# Tool vocabulary — extend as needed
-# ---------------------------------------------------------------------------
-TOOL_VOCAB: List[str] = [
-    "Python", "SQL", "Bash", "Java", "Scala",
-    "Spark", "Kafka", "Airflow", "Dagster", "dbt",
-    "Docker", "Kubernetes", "Terraform",
-    "Azure", "AWS", "GCP", "Databricks", "Delta Lake", "Iceberg",
-    "Microsoft Fabric", "Power BI", "DAX",
-    "FastAPI", "Flask", "React", "Streamlit",
-    "PostgreSQL", "MySQL", "Redis", "Elasticsearch",
-    "Pytest", "GitHub Actions", "Azure DevOps", "CI/CD",
-    "MLflow", "LangChain", "RAG", "Pinecone", "pgvector",
-    "Prometheus", "Grafana", "Monte Carlo", "Great Expectations",
-]
-
-
-# ---------------------------------------------------------------------------
-# Data structures
-# ---------------------------------------------------------------------------
-@dataclass
-class Bullet:
-    text: str
-    metrics: List[str]
-    tools: List[str]
-    evidence_source: str = "unknown"
-    confidence: str = "medium"  # high | medium | low
-
-
-@dataclass
-class Role:
-    title: str
-    company: str
-    start: str
-    end: str
-    location: str
-    bullets: List[Bullet] = field(default_factory=list)
-
-
-@dataclass
-class Project:
-    name: str
-    tech: List[str]
-    bullets: List[Bullet] = field(default_factory=list)
-    date: str = ""
-
-
-@dataclass
-class Profile:
-    experience: List[Role] = field(default_factory=list)
-    projects: List[Project] = field(default_factory=list)
-    skills: List[str] = field(default_factory=list)
-    education: List[Dict] = field(default_factory=list)
-    certifications: List[str] = field(default_factory=list)
-
-
-# ---------------------------------------------------------------------------
-# Metric extraction
-# ---------------------------------------------------------------------------
-METRIC_PATTERNS = [
-    r"\b\d+(\.\d+)?\s?%",                        # percentages
-    r"\$\s?\d[\d,]*(\.\d+)?[kmb]?",               # dollar amounts
-    r"\b\d+[kmb]?\+?\s?(rows|users|events|tps|rps|requests)",  # volume
-    r"\b\d+\s?(ms|s|sec|min|hours|days|weeks)\b", # time
-    r"\bfrom\b.{3,40}\bto\b.{3,40}",              # from X to Y
-    r"\b\d+x\b",                                   # multipliers
-]
-
-
-def extract_metrics(text: str) -> List[str]:
-    found: List[str] = []
-    for pattern in METRIC_PATTERNS:
-        matches = re.findall(pattern, text, flags=re.IGNORECASE)
-        for m in matches:
-            found.append("".join(m) if isinstance(m, tuple) else m)
-    return list(dict.fromkeys(found))  # dedupe, preserve order
-
-
-def extract_tools(text: str) -> List[str]:
-    lower = text.lower()
-    return [t for t in TOOL_VOCAB if t.lower() in lower]
-
-
-def score_confidence(text: str) -> str:
-    metrics = extract_metrics(text)
-    if len(metrics) >= 2:
-        return "high"
-    if len(metrics) == 1:
-        return "medium"
-    return "low"
+from resume_types import Bullet, Profile, Project, Role, profile_to_dict
+from text_utils import extract_metrics, extract_tools, score_confidence
 
 
 # ---------------------------------------------------------------------------
@@ -117,7 +27,7 @@ def parse_blob(text: str, source: str = "blob") -> Profile:
     """
     Parse free-form work experience blob.
     Detects role headers like:
-        Company: Foo  /  Title: Bar  /  Dates: Jan 2022 – Present
+        Company: Foo  /  Title: Bar  /  Dates: Jan 2022 -- Present
     and bullet lines starting with - or *.
     """
     profile = Profile()
@@ -225,9 +135,9 @@ def parse_markdown(text: str, source: str = "markdown_resume") -> Profile:
 def parse_latex(text: str, source: str = "latex_resume") -> Profile:
     """
     Parse a LaTeX resume using standard Jake/Sourabh template commands:
-        \resumeSubheading{Title}{Date}{Company}{Location}
-        \resumeItem{bullet text}
-        \resumeProjectHeading{Name | Tech}{Date}
+        \\resumeSubheading{Title}{Date}{Company}{Location}
+        \\resumeItem{bullet text}
+        \\resumeProjectHeading{Name | Tech}{Date}
     """
     profile = Profile()
     current_role: Optional[Role] = None
@@ -320,10 +230,6 @@ def merge_profiles(*profiles: Profile) -> Profile:
         merged.certifications.extend(p.certifications)
     merged.skills = list(dict.fromkeys(merged.skills))  # dedupe
     return merged
-
-
-def profile_to_dict(profile: Profile) -> dict:
-    return asdict(profile)
 
 
 # ---------------------------------------------------------------------------
