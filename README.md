@@ -24,7 +24,7 @@ Paste a job description and your work history. Get a tailored LaTeX resume with 
 | SQLite profile save/load | ✅ Done | sidebar in Streamlit app |
 | 2026 DE 4-phase standards in SKILL.md | ✅ Done | consolidated with resume_instructions.md |
 | GitHub Actions CI | ✅ Done | lint + test on push |
-| **PyPI package (`pip install tailor-resume`)** | 📋 Pending | publish scripts as installable package |
+| **PyPI package (`pip install tailor-resume`)** | ✅ Done | `pyproject.toml` + `tailor_resume/` package ready |
 | **Streamlit Community Cloud deploy** | 📋 Pending | push to cloud, set main file, configure secrets |
 | **Fly.io MCP deploy** | 📋 Pending | `fly deploy` — needs `FLY_API_TOKEN` secret |
 | **Option E: VS Code extension** | 💡 Idea | native editor integration |
@@ -40,6 +40,12 @@ git clone https://github.com/narendranathe/tailor-resume ~/projects/tailor-resum
 cd ~/projects/tailor-resume
 pip install -r requirements.txt
 python -m pytest tests/ -v   # 190 tests, no API keys required
+```
+
+**Via pip (no clone needed):**
+```bash
+pip install tailor-resume
+tailor-resume --jd jd.txt --artifact resume.md --name "Jane Smith" --email "jane@example.com"
 ```
 
 **Global (use `/tailor-resume` and MCP tools from any project — recommended):**
@@ -65,6 +71,34 @@ This repo ships with both a **skill** (slash command) and an **MCP plugin** (str
 | How Claude uses it | Reads instructions, runs shell commands | Calls typed Python functions directly |
 | Input | Paste text in chat | Structured JSON arguments |
 | Best for | Interactive, conversational tailoring | Programmatic use, scripting, agents |
+
+---
+
+## Python API (after `pip install tailor-resume`)
+
+```python
+from tailor_resume import extract_profile, analyze_gap, render_latex, run_pipeline
+
+# Parse a resume
+profile = extract_profile(open("resume.md").read(), format="markdown")
+
+# Score against a JD
+gap = analyze_gap(open("jd.txt").read(), open("resume.md").read())
+print(f"ATS score: {gap.ats_score_estimate}/100")
+print("Top gaps:", [g.category for g in gap.top_missing[:3]])
+
+# Full pipeline in one call
+result = run_pipeline(
+    jd_text=open("jd.txt").read(),
+    artifact_text=open("resume.md").read(),
+    artifact_format="markdown",
+    output_path="out/resume.tex",
+    name="Jane Smith",
+    email="jane@example.com",
+    linkedin="https://linkedin.com/in/jane",
+)
+print(f"Wrote {result['output_path']} · ATS: {result['ats_score']}/100")
+```
 
 ---
 
