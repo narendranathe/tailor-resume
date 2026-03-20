@@ -1,6 +1,9 @@
 # Core — stdlib only, zero external dependencies for parsing, analysis, and rendering
 # Python 3.11+ required
 
+# Streamlit web app (also used by Streamlit Community Cloud)
+streamlit>=1.32.0
+
 # Dev / testing
 pytest>=7.4
 pytest-cov>=4.1

@@ -1,5 +1,7 @@
 # tailor-resume
 
+[![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://tailor-resume.streamlit.app)
+
 ATS-optimized, recruiter-ready, single-page resume tailoring — powered by Claude Code.
 
 Paste a job description and your work history. Get a tailored LaTeX resume with quantified bullets, skills gap analysis, and ATS score — in minutes. No fabrication. No templates with your name baked in.
@@ -236,6 +238,60 @@ ATS tip: verify your resume is machine-readable by selecting and copying text fr
 
 ---
 
+## Option C: Streamlit web app (browser-based, no Claude Code required)
+
+[![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://tailor-resume.streamlit.app)
+
+A browser-based UI — paste your resume and JD, get an ATS score, gap analysis, and a downloadable `.tex` file. No Claude Code or terminal required.
+
+**Run locally:**
+```bash
+pip install streamlit
+streamlit run streamlit_app/app.py
+```
+
+**Deploy to Streamlit Community Cloud (free):**
+1. Fork this repo to your GitHub account
+2. Go to [share.streamlit.io](https://share.streamlit.io) → New app
+3. Set main file: `streamlit_app/app.py`
+4. Click Deploy
+
+**The 3-tab interface:**
+
+| Tab | What it does |
+|-----|-------------|
+| 📄 Profile | Paste resume/blob → parse into structured profile; save/load via sidebar |
+| 🎯 Tailor | Paste JD → ATS score + gap table + tailored `.tex` |
+| ⬇️ Download | Download `resume_tailored.tex` → upload to Overleaf for PDF |
+
+---
+
+## Option D: Hosted MCP server (zero-install, remote tools)
+
+Register the hosted MCP server in Claude Code and the four tools are available from any project — no local clone, no Python install:
+
+```json
+{
+  "mcpServers": {
+    "tailor-resume": {
+      "url": "https://tailor-resume-mcp.fly.dev/mcp"
+    }
+  }
+}
+```
+
+Add this to `~/.claude/settings.json` under `mcpServers`. The same four tools (`extract_profile`, `analyze_gap`, `render_latex`, `run_pipeline`) work exactly as the local MCP plugin but call the remote server.
+
+**Self-host on Fly.io:**
+```bash
+fly auth login
+fly launch --no-deploy   # reads fly.toml
+fly secrets set ANTHROPIC_API_KEY=...  # if needed
+fly deploy
+```
+
+---
+
 ## Use the scripts directly (no Claude required)
 
 The scripts under `.claude/skills/tailor-resume/scripts/` are standalone Python — core pipeline uses stdlib only.
@@ -349,8 +405,20 @@ tailor-resume/
 │   ├── test_latex_renderer.py     — renderer unit tests
 │   ├── test_rag_store.py          — SQLite backend tests
 │   └── test_cli.py                — CLI entry point tests
+├── streamlit_app/
+│   ├── app.py                     — Streamlit entrypoint (3-tab layout + sidebar)
+│   └── tabs/
+│       ├── profile_tab.py         — parse resume text into structured profile
+│       ├── tailor_tab.py          — JD gap analysis + ATS score + LaTeX render
+│       └── download_tab.py        — download tailored .tex
+├── server.py                      — FastMCP HTTP/SSE entrypoint (Fly.io deploy)
+├── Dockerfile                     — python:3.12-slim for Fly.io
+├── fly.toml                       — Fly.io config (tailor-resume-mcp, ord region)
+├── .github/workflows/
+│   ├── ci.yml                     — lint + test on push
+│   └── deploy-mcp.yml             — auto-deploy to Fly.io on main
 ├── Makefile                       — setup/demo/test/lint/render/clean targets
-├── requirements.txt               — pytest, ruff (core scripts use stdlib only)
+├── requirements.txt               — streamlit, pytest, ruff (core scripts use stdlib only)
 ├── requirements-optional.txt      — pinecone-client, openai, mcp
 └── .env.example                   — documented env vars with safe defaults
 ```
