@@ -11,24 +11,63 @@ Paste a job description and your work history. Get a tailored LaTeX resume with 
 
 ## Project Status
 
+### Tier 1 — Zero infrastructure, immediate reach
+
 | Feature | Status | Notes |
 |---------|--------|-------|
 | Core pipeline (parse → gap → render) | ✅ Done | stdlib only, 190 tests |
 | Claude Code skill (`/tailor-resume`) | ✅ Done | per-project + global install |
 | MCP plugin (4 typed tools) | ✅ Done | stdio, auto-registered |
-| ATS Relevance Gate | ✅ Done | ≥80→97+, 60-79→90+, <50→decline |
+| ATS Relevance Gate (score bands + honest ceiling) | ✅ Done | ≥80→97+, 60-79→90+, <50→decline |
 | `make install-global` | ✅ Done | one-command global install |
 | Auto-invoke from natural language | ✅ Done | CLAUDE.md hook |
-| Streamlit web app (3-tab UI) | ✅ Done | profile→tailor→download + save/load |
-| Hosted MCP server (Fly.io) | ✅ Done | Dockerfile + fly.toml + CI deploy |
-| SQLite profile save/load | ✅ Done | sidebar in Streamlit app |
-| 2026 DE 4-phase standards in SKILL.md | ✅ Done | consolidated with resume_instructions.md |
-| GitHub Actions CI | ✅ Done | lint + test on push |
-| **PyPI package (`pip install tailor-resume`)** | ✅ Done | `pyproject.toml` + `tailor_resume/` package ready |
-| **Streamlit Community Cloud deploy** | 📋 Pending | push to cloud, set main file, configure secrets |
-| **Fly.io MCP deploy** | 📋 Pending | `fly deploy` — needs `FLY_API_TOKEN` secret |
-| **Option E: VS Code extension** | 💡 Idea | native editor integration |
-| **Batch tailoring (multi-JD)** | 💡 Idea | run against N JDs, output ranked `.tex` files |
+| **Streamlit web app** (3-tab browser UI) | ✅ Done | profile→tailor→download + SQLite save/load sidebar |
+| **PyPI package** (`pip install tailor-resume`) | ✅ Done | `pyproject.toml` + `tailor_resume/` package + Python API |
+| **Docker image** (`docker run narendranathe/tailor-resume`) | 📋 [#33](https://github.com/narendranathe/tailor-resume/issues/33) | bundles Python + pdflatex + deps; one command → PDF |
+| Streamlit Community Cloud deploy | 📋 Pending | push to cloud, point at `streamlit_app/app.py` |
+| Fly.io MCP deploy | 📋 Pending | `fly deploy` — needs `FLY_API_TOKEN` secret in GitHub |
+| PyPI publish | 📋 Pending | configure trusted publisher, push `v0.1.0` tag |
+
+### Tier 2 — Hosted web app (1–2 weeks)
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| **Hosted MCP server** (HTTP/SSE, Fly.io) | ✅ Done | server.py + Dockerfile + fly.toml + CI deploy |
+| **FastAPI backend** (`/tailor` + `/profile` + `/health`) | 📋 [#34](https://github.com/narendranathe/tailor-resume/issues/34) | Clerk auth · Fly.io · TRACER for all integrations |
+| **React web app** (gap chart + ATS score + download) | 📋 [#35](https://github.com/narendranathe/tailor-resume/issues/35) | Vite + Recharts · Vercel deploy · Clerk auth |
+
+### Tier 3 — Integrations (high leverage)
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| **autoapply-ai integration** | 📋 [#36](https://github.com/narendranathe/tailor-resume/issues/36) | high-score job → "Tailor Resume" in sidepanel → .tex in vault |
+| **Chrome extension button** (LinkedIn/Greenhouse/Lever) | 📋 [#37](https://github.com/narendranathe/tailor-resume/issues/37) | content script → scrapes JD → calls API → ATS + download |
+| **JobScout webhook** | 📋 [#38](https://github.com/narendranathe/tailor-resume/issues/38) | dream job alert fires → auto-tailor + .tex link in Discord/Telegram |
+
+### Tier 4 — Multi-user SaaS
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| **Profile persistence** (Supabase + Pinecone) | 📋 [#39](https://github.com/narendranathe/tailor-resume/issues/39) | upload once, all future JDs pull from RAG store |
+| **Cover letter companion** | 📋 [#40](https://github.com/narendranathe/tailor-resume/issues/40) | same pipeline, 1-page LaTeX cover letter output |
+| **Subscription tiers** (Free + Pro via Stripe) | 📋 [#41](https://github.com/narendranathe/tailor-resume/issues/41) | 5/mo free · unlimited + Pinecone + cover letters = Pro |
+
+---
+
+## Scaling Roadmap
+
+```
+Week 1-2  (done) Streamlit app + PyPI package      → any Python dev or browser user
+Week 3-4  (done) Hosted MCP (Fly.io)               → any Claude Code user globally, zero install
+Month 2          FastAPI+React web app + Clerk/Supabase → true multi-user product
+                 Docker image                        → zero-dep single-command PDF
+Month 2-3        autoapply-ai integration            → job appears → resume auto-generated
+                 Chrome ext "Tailor Resume" button   → works on LinkedIn/Greenhouse/Lever
+Month 3+         JobScout webhook                   → score threshold → auto-tailor + attach PDF
+                 Cover letter companion              → same pipeline, different template
+                 Profile persistence (Supabase)     → upload once, reuse forever
+                 Subscription tiers (Stripe)        → Free + Pro tiers
+```
 
 ---
 
