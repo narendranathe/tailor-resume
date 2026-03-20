@@ -8,19 +8,24 @@ Paste a job description and your work history. Get a tailored LaTeX resume with 
 
 ## Install
 
+**Local (use only from this repo):**
 ```bash
-git clone https://github.com/narendranathe/tailor-resume.git
-cd tailor-resume
+git clone https://github.com/narendranathe/tailor-resume ~/projects/tailor-resume
+cd ~/projects/tailor-resume
 pip install -r requirements.txt
+python -m pytest tests/ -v   # 190 tests, no API keys required
 ```
 
-Verify everything works on the included sample data:
-
+**Global (use `/tailor-resume` and MCP tools from any project — recommended):**
 ```bash
-python -m pytest tests/ -v
+git clone https://github.com/narendranathe/tailor-resume ~/projects/tailor-resume
+cd ~/projects/tailor-resume
+pip install -r requirements.txt
+make install-global           # copies skill, registers MCP, installs optional deps
+# Restart Claude Code, then type /tailor-resume from any project
 ```
 
-162 tests should pass. No API keys required.
+`make install-global` is idempotent — safe to run again after `git pull` to pick up skill updates.
 
 ---
 
@@ -54,19 +59,16 @@ The skill appears in Claude's available skills list immediately.
 
 ### Global install (use from any project)
 
-Copy the skill folder into Claude Code's global skills directory:
-
-**macOS / Linux:**
 ```bash
-cp -r .claude/skills/tailor-resume ~/.claude/skills/
+make install-global
 ```
 
-**Windows (Git Bash):**
-```bash
-cp -r .claude/skills/tailor-resume "$USERPROFILE/.claude/skills/"
-```
+This single command:
+1. Registers the MCP server in `~/.claude/.mcp.json`
+2. Copies the skill to `~/.claude/skills/tailor-resume/`
+3. Installs optional deps (`pinecone`, `openai`) for RAG + semantic search
 
-After copying, the skill is available in every Claude Code session.
+Restart Claude Code once. The skill and MCP tools are then available in every project.
 
 ### Use the skill
 
