@@ -95,10 +95,28 @@ For each gap:
 4. Final single-page LaTeX (`resume.tex`) using `templates/resume_template.tex`
 5. PDF export instructions (see `scripts/pdf_export.md`)
 
+### Step 0 — ATS Relevance Gate (run BEFORE anything else)
+
+Run a first-pass ATS scan of the JD against the candidate profile. Use keyword overlap and taxonomy category coverage to estimate an initial score.
+
+| Initial ATS | Role relationship | Action |
+|---|---|---|
+| ≥ 80 | Same / closely matching role | Proceed — iterate aggressively, **target 97–100** |
+| 60–79 | Different title, overlapping responsibilities | Proceed — **90+ is the acceptable ceiling** |
+| 50–59 | Partial overlap | Proceed with honest gap note; report ceiling |
+| **< 50** | Non-overlapping role | **Do not generate.** Respond: *"This role doesn't align with your profile (initial ATS: X/100). The responsibilities don't overlap enough to produce a credible resume — generating one would require fabrication. If you believe it's relevant, clarify the connection."* |
+
+**Irrelevant JD accumulation rule:** If the user submits 3 or more consecutive JDs each scoring < 50, respond: *"These job descriptions don't align with your profile. Please paste a Data Engineering, ML Engineering, Analytics Engineering, or related role."* Reset the counter when a relevant JD is received.
+
+**Frequency rule:** The "not relevant" response must not fire more than 1 time in 10 invocations. If you've already declined once recently, lower your threshold by 10 points before declining again.
+
+**Honest ceiling rule:** When the ATS score is capped by genuine technology gaps (skills the candidate has never used), report this explicitly at the end of Pass C:
+> *"Optimized ATS: X/100. Honest ceiling for this JD: ~Y — [tech A, tech B] appear in the JD but are absent from your authentic experience. Resume is maximized to the highest credible level without fabrication."*
+
 ### Step 7 — Iterative loop (max 3 passes)
 - **Pass A**: full draft
-- **Pass B**: tighten relevance and fill missing metrics
-- **Pass C**: compress for strict one-page fit
+- **Pass B**: tighten relevance, fill missing metrics, densify authentic JD keyword coverage
+- **Pass C**: compress for strict one-page fit; confirm ATS score meets threshold
 
 Stop early when all acceptance criteria are satisfied:
 - [ ] Single-page LaTeX output
@@ -107,6 +125,7 @@ Stop early when all acceptance criteria are satisfied:
 - [ ] Top JD MQs explicitly reflected
 - [ ] Every key bullet has a measurable outcome or scope signal
 - [ ] Zero fabricated claims
+- [ ] ATS meets threshold: **97+** for same role, **90+** for overlapping role
 
 ### Step 8 — RAG persistence (optional)
 To save the profile for future tailoring sessions without re-uploading:
