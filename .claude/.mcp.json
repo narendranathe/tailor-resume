@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "tailor-resume": {
+      "command": "python",
+      "args": [".claude/skills/tailor-resume/scripts/mcp_server.py"],
+      "env": {}
+    }
+  }
+}

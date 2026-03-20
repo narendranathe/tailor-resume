@@ -6,3 +6,6 @@ pinecone-client>=3.0
 
 # OpenAI text-embedding-3-small (semantic search; falls back to TF-IDF if absent)
 openai>=1.0
+
+# MCP server (Claude Code plugin — exposes pipeline as tools)
+mcp>=1.0
