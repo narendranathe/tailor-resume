@@ -1,6 +1,5 @@
 """Tests for jd_gap_analyzer.py — tokenizer, coverage scoring, gap signals, ATS score."""
 import sys
-import pytest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / ".claude/skills/tailor-resume/scripts"))
@@ -14,7 +13,6 @@ from jd_gap_analyzer import (
     estimate_ats_score,
     run_analysis,
     GapSignal,
-    GapReport,
 )
 
 JD_RICH = """

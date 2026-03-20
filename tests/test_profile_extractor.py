@@ -1,7 +1,6 @@
 """Tests for profile_extractor.py — markdown, LaTeX, LinkedIn parsers, merge, tools/metrics."""
 import json
 import sys
-import pytest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / ".claude/skills/tailor-resume/scripts"))
@@ -16,7 +15,6 @@ from profile_extractor import (
     extract_metrics,
     extract_tools,
     score_confidence,
-    Bullet,
     Role,
     Profile,
 )

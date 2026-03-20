@@ -1,11 +1,7 @@
 """Tests for latex_renderer.py — escape, section builders, template rendering."""
-import json
-import re
 import sys
-import tempfile
 from pathlib import Path
 
-import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent / ".claude/skills/tailor-resume/scripts"))
 

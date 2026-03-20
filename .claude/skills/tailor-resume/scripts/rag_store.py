@@ -280,7 +280,7 @@ def main() -> None:
     p_query.add_argument("--user-id", required=True)
     p_query.add_argument("--top-k", type=int, default=3)
 
-    p_list = sub.add_parser("list", help="List stored user IDs")
+    sub.add_parser("list", help="List stored user IDs")
 
     p_delete = sub.add_parser("delete", help="Delete all profiles for a user")
     p_delete.add_argument("--user-id", required=True)

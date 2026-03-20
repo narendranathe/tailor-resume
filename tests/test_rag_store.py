@@ -1,8 +1,5 @@
 """Tests for rag_store.py — SQLite backend, embeddings, factory (no API keys required)."""
-import json
-import os
 import sys
-import tempfile
 from pathlib import Path
 
 import pytest
