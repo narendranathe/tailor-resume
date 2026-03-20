@@ -20,13 +20,24 @@ Verify everything works on the included sample data:
 python -m pytest tests/ -v
 ```
 
-19 tests should pass. No API keys required.
+162 tests should pass. No API keys required.
 
 ---
 
-## Activate the skill in Claude Code
+## Two ways to use it in Claude Code
 
-This repo ships as a **Claude Code skill** — a folder of instructions and scripts that Claude picks up automatically.
+This repo ships with both a **skill** (slash command) and an **MCP plugin** (structured tools). Use whichever fits your workflow.
+
+| | Skill (`/tailor-resume`) | MCP Plugin |
+|---|---|---|
+| How to activate | `/tailor-resume` slash command | Automatic on project open |
+| How Claude uses it | Reads instructions, runs shell commands | Calls typed Python functions directly |
+| Input | Paste text in chat | Structured JSON arguments |
+| Best for | Interactive, conversational tailoring | Programmatic use, scripting, agents |
+
+---
+
+## Option A: Claude Code skill (slash command)
 
 ### Per-project (recommended — no copy needed)
 
@@ -57,9 +68,7 @@ cp -r .claude/skills/tailor-resume "$USERPROFILE/.claude/skills/"
 
 After copying, the skill is available in every Claude Code session.
 
----
-
-## Use the skill
+### Use the skill
 
 Once activated, invoke the skill from any Claude Code chat:
 
@@ -111,6 +120,79 @@ Claude runs up to 3 refinement passes automatically (draft → tighten metrics �
 
 ---
 
+## Option B: MCP plugin (structured tools)
+
+The MCP plugin exposes the pipeline as four typed tools that Claude Code calls directly — no slash command needed. Claude invokes the right tool automatically based on what you describe.
+
+### Install
+
+```bash
+pip install -r requirements-optional.txt   # adds mcp>=1.0
+```
+
+### Activate
+
+The plugin is pre-configured in `.claude/.mcp.json`. Open the project in Claude Code and restart it. The four tools appear automatically:
+
+```
+tailor-resume: extract_profile
+tailor-resume: analyze_gap
+tailor-resume: render_latex
+tailor-resume: run_pipeline
+```
+
+No slash command required. Just describe what you want in chat — Claude picks the right tool.
+
+### The four tools
+
+**`extract_profile(text, format)`**
+Parse any resume text into a structured profile JSON.
+- `text`: raw resume content
+- `format`: `blob` | `markdown` | `latex` | `linkedin` (default: `blob`)
+- Returns: JSON with `experience`, `projects`, `skills`, `education`, `certifications`
+
+**`analyze_gap(jd_text, resume_text, top_n)`**
+Score a resume against a job description.
+- Returns: ATS score (0-100), top gap signals with priorities and closing angles, keyword gaps, recommendations
+
+**`render_latex(profile_json, output_path, name, email, ...)`**
+Render a `resume.tex` from a profile dict.
+- PII (`name`, `email`, `phone`, `linkedin`, `github`, `portfolio`) injected at runtime
+- Returns: absolute path to the written `.tex` file
+
+**`run_pipeline(jd_text, artifact_text, artifact_format, output_path, name, email, ...)`**
+Full pipeline in one call: parse → gap analysis → render.
+- Returns: profile dict, gap report, output path
+
+### Example: full pipeline in one chat message
+
+```
+Here is my JD: [paste JD]
+Here is my work history: [paste blob]
+My name is Jane Smith, email jane@example.com, LinkedIn https://linkedin.com/in/jane
+Write the resume to out/resume.tex
+```
+
+Claude calls `run_pipeline(...)` and returns the gap report + confirms the .tex path.
+
+### Connect globally (use from any project)
+
+To use the MCP plugin outside this repo, add it to your global Claude Code config:
+
+**`~/.claude/.mcp.json`:**
+```json
+{
+  "mcpServers": {
+    "tailor-resume": {
+      "command": "python",
+      "args": ["/absolute/path/to/tailor-resume/.claude/skills/tailor-resume/scripts/mcp_server.py"]
+    }
+  }
+}
+```
+
+---
+
 ## Export to PDF
 
 After Claude produces `resume.tex`:
@@ -132,7 +214,7 @@ ATS tip: verify your resume is machine-readable by selecting and copying text fr
 
 ## Use the scripts directly (no Claude required)
 
-The scripts under `.claude/skills/tailor-resume/scripts/` are standalone Python — no installation beyond stdlib.
+The scripts under `.claude/skills/tailor-resume/scripts/` are standalone Python — core pipeline uses stdlib only.
 
 **Parse a work history blob into profile JSON:**
 ```bash
@@ -161,23 +243,15 @@ python .claude/skills/tailor-resume/scripts/latex_renderer.py \
   --portfolio "https://yoursite.com"
 ```
 
-**Try the full pipeline on sample data:**
+**Full pipeline in one command (cli.py):**
 ```bash
 mkdir -p out
-
-python .claude/skills/tailor-resume/scripts/profile_extractor.py \
-  --input fixtures/sample_blob.txt --format blob --output out/profile.json
-
-python .claude/skills/tailor-resume/scripts/jd_gap_analyzer.py \
-  --jd fixtures/sample_jd.txt --profile out/profile.json
-
-python .claude/skills/tailor-resume/scripts/latex_renderer.py \
-  --profile out/profile.json \
-  --template .claude/skills/tailor-resume/templates/resume_template.tex \
-  --output out/resume.tex \
+python .claude/skills/tailor-resume/scripts/cli.py \
+  --jd fixtures/sample_jd.txt \
+  --artifact fixtures/sample_blob.txt:blob \
   --name "Jane Smith" --email "jane@example.com" \
   --linkedin "https://linkedin.com/in/jane-smith" \
-  --portfolio "https://janesmith.dev"
+  --output out/resume.tex
 ```
 
 ---
@@ -222,27 +296,38 @@ python -m pytest tests/ --cov=.claude/skills/tailor-resume/scripts --cov-report=
 
 ```
 tailor-resume/
-├── .claude/skills/tailor-resume/
-│   ├── SKILL.md          — skill instructions and 8-step workflow
-│   ├── REFERENCE.md      — 2026 resume philosophy, bullet scoring rubric
-│   ├── EXAMPLES.md       — invocation examples and blob format templates
-│   ├── scripts/
-│   │   ├── profile_extractor.py   — parse blobs, LaTeX, markdown, LinkedIn PDF
-│   │   ├── jd_gap_analyzer.py     — JD gap analysis, ATS score, signal taxonomy
-│   │   ├── latex_renderer.py      — profile dict → LaTeX resume
-│   │   ├── rag_store.py           — Pinecone/SQLite profile persistence
-│   │   └── pdf_export.md          — PDF export reference
-│   └── templates/
-│       └── resume_template.tex    — PII-free single-page LaTeX template
+├── .claude/
+│   ├── .mcp.json                 — MCP plugin config (auto-loaded by Claude Code)
+│   └── skills/tailor-resume/
+│       ├── SKILL.md              — skill instructions and 8-step workflow
+│       ├── REFERENCE.md          — 2026 resume philosophy, bullet scoring rubric
+│       ├── EXAMPLES.md           — invocation examples and blob format templates
+│       ├── scripts/
+│       │   ├── resume_types.py        — shared dataclasses (Bullet/Role/Profile/GapReport)
+│       │   ├── text_utils.py          — shared utilities (extract_metrics, tokenize, ...)
+│       │   ├── profile_extractor.py   — parse blobs, LaTeX, markdown, LinkedIn PDF
+│       │   ├── jd_gap_analyzer.py     — JD gap analysis, ATS score, signal taxonomy
+│       │   ├── latex_renderer.py      — profile dict → LaTeX resume
+│       │   ├── rag_store.py           — Pinecone/SQLite profile persistence
+│       │   ├── cli.py                 — single-command pipeline orchestrator
+│       │   └── mcp_server.py          — MCP plugin server (4 tools for Claude Code)
+│       └── templates/
+│           └── resume_template.tex    — PII-free single-page LaTeX template
 ├── fixtures/
 │   ├── sample_jd.txt              — sample Senior Data Engineer JD
 │   ├── sample_blob.txt            — sample work experience blob
 │   └── sample_profile.json        — pre-parsed profile for fast tests
 ├── tests/
 │   ├── conftest.py                — shared fixtures and sys.path setup
-│   └── test_tracer_e2e.py         — 19 end-to-end pipeline tests
+│   ├── test_tracer_e2e.py         — end-to-end pipeline tests
+│   ├── test_profile_extractor.py  — parser unit tests
+│   ├── test_jd_gap_analyzer.py    — gap analysis unit tests
+│   ├── test_latex_renderer.py     — renderer unit tests
+│   ├── test_rag_store.py          — SQLite backend tests
+│   └── test_cli.py                — CLI entry point tests
+├── Makefile                       — setup/demo/test/lint/render/clean targets
 ├── requirements.txt               — pytest, ruff (core scripts use stdlib only)
-├── requirements-optional.txt      — pinecone-client, openai
+├── requirements-optional.txt      — pinecone-client, openai, mcp
 └── .env.example                   — documented env vars with safe defaults
 ```
 
