@@ -1,10 +1,15 @@
-import sys, os
+import sys
+import os
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _REPO = os.path.dirname(os.path.dirname(_HERE))
-_SCRIPTS = os.path.join(_REPO, '.claude', 'skills', 'tailor-resume', 'scripts')
-if _SCRIPTS not in sys.path:
-    sys.path.insert(0, _SCRIPTS)
+
+for _p in [
+    os.path.join(_REPO, ".claude", "skills", "tailor-resume", "scripts"),
+    os.path.join(_REPO, "tailor_resume", "_scripts"),
+]:
+    if os.path.isdir(_p) and _p not in sys.path:
+        sys.path.insert(0, _p)
 
 import streamlit as st
 from jd_gap_analyzer import run_analysis

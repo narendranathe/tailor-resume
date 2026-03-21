@@ -1,18 +1,23 @@
-import sys, os
+import sys
+import os
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _REPO = os.path.dirname(os.path.dirname(_HERE))
-_SCRIPTS = os.path.join(_REPO, '.claude', 'skills', 'tailor-resume', 'scripts')
-if _SCRIPTS not in sys.path:
-    sys.path.insert(0, _SCRIPTS)
 
-import importlib
+# Ensure both script locations are on sys.path (same as app.py)
+for _p in [
+    os.path.join(_REPO, ".claude", "skills", "tailor-resume", "scripts"),
+    os.path.join(_REPO, "tailor_resume", "_scripts"),
+]:
+    if os.path.isdir(_p) and _p not in sys.path:
+        sys.path.insert(0, _p)
+
 import streamlit as st
 from text_utils import profile_dict_to_text
 from dataclasses import asdict
 
-# Force profile_extractor to load from _SCRIPTS path so we always get the
-# latest version even if tailor_resume/__init__.py already cached an older one.
+# If profile_extractor was cached from an older install (missing parse_pdf),
+# evict it so Python reimports the current version from _SCRIPTS above.
 if "profile_extractor" in sys.modules and not hasattr(sys.modules["profile_extractor"], "parse_pdf"):
     del sys.modules["profile_extractor"]
 
