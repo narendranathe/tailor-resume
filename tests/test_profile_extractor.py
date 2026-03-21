@@ -658,7 +658,8 @@ DP-700 Microsoft Certified Data Engineer Associate
 # parse_pdf
 # ---------------------------------------------------------------------------
 class TestParsePdf:
-    def test_parse_pdf_returns_profile_with_pypdf(self):
+    def test_parse_pdf_blank_page_raises_value_error_with_pypdf(self):
+        """pypdf is used for blank page → no text → ValueError (not ImportError)."""
         pytest.importorskip("pypdf", reason="pypdf not installed")
         from pypdf import PdfWriter
         writer = PdfWriter()
@@ -666,8 +667,9 @@ class TestParsePdf:
         buf = io.BytesIO()
         writer.write(buf)
         pdf_bytes = buf.getvalue()
-        profile = parse_pdf(pdf_bytes)
-        assert isinstance(profile, Profile)
+        # Blank page has no text; correct behavior is ValueError, not ImportError
+        with pytest.raises(ValueError, match="No text could be extracted"):
+            parse_pdf(pdf_bytes)
 
     def test_parse_pdf_falls_back_to_stdlib_without_pypdf(self, monkeypatch):
         """Without pypdf, stdlib fallback runs; fake bytes → ValueError (no text found)."""
