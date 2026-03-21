@@ -383,14 +383,74 @@ def parse_linkedin(text: str) -> Profile:
 
 
 # ---------------------------------------------------------------------------
-# PDF parser  (requires pypdf)
+# PDF text extraction — stdlib fallback (no external deps required)
+# ---------------------------------------------------------------------------
+
+def _extract_pdf_text_stdlib(data: bytes) -> str:
+    """
+    Extract readable text from a PDF using only stdlib.
+    Parses PDF content streams for BT/ET text blocks and Tj/TJ operators.
+    Works for most text-based PDFs (not scanned/image-only PDFs).
+    """
+    import zlib
+
+    # Decompress FlateDecode streams, then scan for text operators
+    text_pieces: List[str] = []
+
+    # Try to decompress any zlib-compressed streams
+    raw = data
+    for chunk in re.finditer(rb"stream\r?\n(.*?)\r?\nendstream", data, re.DOTALL):
+        stream = chunk.group(1)
+        try:
+            decompressed = zlib.decompress(stream)
+            raw = raw + b"\n" + decompressed
+        except Exception:
+            pass  # not a compressed stream
+
+    try:
+        text = raw.decode("latin-1", errors="replace")
+    except Exception:
+        text = raw.decode("utf-8", errors="replace")
+
+    # Extract text from BT...ET blocks
+    for block in re.finditer(r"BT(.*?)ET", text, re.DOTALL):
+        content = block.group(1)
+        # Tj operator: (text) Tj
+        for m in re.finditer(r"\(((?:[^()\\]|\\[()\\nrt])*)\)\s*Tj", content):
+            text_pieces.append(m.group(1))
+        # TJ operator: [(text) ...] TJ
+        for m in re.finditer(r"\[(.*?)\]\s*TJ", content, re.DOTALL):
+            for s in re.finditer(r"\(((?:[^()\\]|\\[()\\nrt])*)\)", m.group(1)):
+                text_pieces.append(s.group(1))
+
+    # Also try ' and " operators
+    for m in re.finditer(r"\(((?:[^()\\]|\\[()\\nrt])*)\)\s*['\"]", text):
+        text_pieces.append(m.group(1))
+
+    # Clean PDF escape sequences
+    cleaned: List[str] = []
+    for piece in text_pieces:
+        piece = (piece.replace("\\n", "\n").replace("\\r", "\n")
+                 .replace("\\t", " ").replace("\\(", "(").replace("\\)", ")")
+                 .replace("\\\\", "\\"))
+        # Keep printable ASCII + newlines
+        piece = "".join(c for c in piece if 32 <= ord(c) <= 126 or c == "\n")
+        if piece.strip():
+            cleaned.append(piece)
+
+    return "\n".join(cleaned)
+
+
+# ---------------------------------------------------------------------------
+# PDF parser  (pypdf preferred; stdlib fallback if not installed)
 # ---------------------------------------------------------------------------
 
 def parse_pdf(file_bytes: bytes, source: str = "pdf_resume") -> Profile:
     """
-    Extract text from a PDF file and parse it as a blob.
-    Requires: pypdf (pip install pypdf)
+    Extract text from a PDF file and parse it.
+    Uses pypdf if available, falls back to stdlib extraction otherwise.
     """
+    text = ""
     try:
         from pypdf import PdfReader
         import io
@@ -398,25 +458,54 @@ def parse_pdf(file_bytes: bytes, source: str = "pdf_resume") -> Profile:
         pages = [page.extract_text() or "" for page in reader.pages]
         text = "\n".join(pages)
     except ImportError:
-        raise ImportError("pypdf is required to parse PDF files: pip install pypdf")
+        # No pypdf — use stdlib extractor
+        text = _extract_pdf_text_stdlib(file_bytes)
 
-    # If the PDF looks like it has LaTeX structure embedded as text, try latex parser
+    if not text.strip():
+        raise ValueError(
+            "No text could be extracted from this PDF. "
+            "It may be a scanned/image-only PDF. "
+            "Try copy-pasting the text content instead."
+        )
+
     if "\\resumeSubheading" in text or "\\resumeItem" in text:
         return parse_latex(text, source=source)
 
-    # Heuristic: try to detect role/company patterns before falling back to blob
     return _parse_plain_resume_text(text, source=source)
 
 
 # ---------------------------------------------------------------------------
-# DOCX parser  (requires python-docx)
+# DOCX parser  (python-docx preferred; zipfile fallback if not installed)
 # ---------------------------------------------------------------------------
+
+def _extract_docx_text_stdlib(data: bytes) -> str:
+    """Extract text from a .docx file using only stdlib (zipfile + xml.etree)."""
+    import zipfile
+    import xml.etree.ElementTree as ET
+    import io
+
+    NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+    pieces: List[str] = []
+    try:
+        with zipfile.ZipFile(io.BytesIO(data)) as z:
+            with z.open("word/document.xml") as f:
+                tree = ET.parse(f)
+            for para in tree.iter(f"{{{NS}}}p"):
+                parts = [t.text or "" for t in para.iter(f"{{{NS}}}t")]
+                line = "".join(parts).strip()
+                if line:
+                    pieces.append(line)
+    except Exception:
+        pass
+    return "\n".join(pieces)
+
 
 def parse_docx(file_bytes: bytes, source: str = "docx_resume") -> Profile:
     """
     Extract text from a .docx file and parse it.
-    Requires: python-docx (pip install python-docx)
+    Uses python-docx if available, falls back to stdlib zipfile extraction.
     """
+    text = ""
     try:
         from docx import Document
         import io
@@ -424,7 +513,10 @@ def parse_docx(file_bytes: bytes, source: str = "docx_resume") -> Profile:
         paragraphs = [p.text for p in doc.paragraphs if p.text.strip()]
         text = "\n".join(paragraphs)
     except ImportError:
-        raise ImportError("python-docx is required to parse DOCX files: pip install python-docx")
+        text = _extract_docx_text_stdlib(file_bytes)
+
+    if not text.strip():
+        raise ValueError("No text could be extracted from this DOCX file.")
 
     return _parse_plain_resume_text(text, source=source)
 

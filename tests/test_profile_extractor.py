@@ -573,7 +573,8 @@ class TestParsePdf:
         profile = parse_pdf(pdf_bytes)
         assert isinstance(profile, Profile)
 
-    def test_parse_pdf_raises_import_error_without_pypdf(self, monkeypatch):
+    def test_parse_pdf_falls_back_to_stdlib_without_pypdf(self, monkeypatch):
+        """Without pypdf, stdlib fallback runs; fake bytes → ValueError (no text found)."""
         import builtins
         real_import = builtins.__import__
 
@@ -582,11 +583,10 @@ class TestParsePdf:
                 raise ImportError("No module named 'pypdf'")
             return real_import(name, *args, **kwargs)
 
-        # Remove cached module to force re-import
         saved = sys.modules.pop("pypdf", None)
         monkeypatch.setattr(builtins, "__import__", mock_import)
         try:
-            with pytest.raises(ImportError, match="pypdf"):
+            with pytest.raises(ValueError, match="No text could be extracted"):
                 parse_pdf(b"fake pdf bytes")
         finally:
             monkeypatch.setattr(builtins, "__import__", real_import)
@@ -613,7 +613,8 @@ class TestParseDocx:
         profile = parse_docx(docx_bytes)
         assert isinstance(profile, Profile)
 
-    def test_parse_docx_raises_import_error_without_docx(self, monkeypatch):
+    def test_parse_docx_falls_back_to_stdlib_without_python_docx(self, monkeypatch):
+        """Without python-docx, stdlib fallback runs; fake bytes → ValueError (no text found)."""
         import builtins
         real_import = builtins.__import__
 
@@ -625,7 +626,7 @@ class TestParseDocx:
         saved = sys.modules.pop("docx", None)
         monkeypatch.setattr(builtins, "__import__", mock_import)
         try:
-            with pytest.raises(ImportError, match="python-docx"):
+            with pytest.raises(ValueError, match="No text could be extracted from this DOCX"):
                 parse_docx(b"fake docx bytes")
         finally:
             monkeypatch.setattr(builtins, "__import__", real_import)
