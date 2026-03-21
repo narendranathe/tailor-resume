@@ -764,7 +764,7 @@ def _parse_plain_resume_text(text: str, source: str = "resume") -> Profile:
     and 3-line (Title / Company / Date) role headers via 2-step lookahead.
     """
     profile = Profile()
-    lines = [l.strip() for l in text.splitlines()]
+    lines = [line.strip() for line in text.splitlines()]
     n = len(lines)
     section = "experience"
     current_role: Optional[Role] = None

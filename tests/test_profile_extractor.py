@@ -621,7 +621,7 @@ DP-700 Microsoft Certified Data Engineer Associate
         from profile_extractor import _extract_pdf_text_stdlib
         fake = b"stream\nBT\n(EXPERIENCE) Tj\nT*\n(Data Engineer) Tj\nET\nendstream"
         out = _extract_pdf_text_stdlib(fake)
-        lines = [l for l in out.splitlines() if l.strip()]
+        lines = [line for line in out.splitlines() if line.strip()]
         assert len(lines) >= 2
 
     def test_stdlib_pdf_extractor_td_newline(self):
@@ -629,7 +629,7 @@ DP-700 Microsoft Certified Data Engineer Associate
         from profile_extractor import _extract_pdf_text_stdlib
         fake = b"stream\nBT\n(Senior) Tj\n0 -14 Td\n(Engineer) Tj\nET\nendstream"
         out = _extract_pdf_text_stdlib(fake)
-        lines = [l for l in out.splitlines() if l.strip()]
+        lines = [line for line in out.splitlines() if line.strip()]
         assert len(lines) >= 2
 
     def test_stdlib_pdf_extractor_quote_operator(self):
