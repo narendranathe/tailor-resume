@@ -388,55 +388,108 @@ def parse_linkedin(text: str) -> Profile:
 
 def _extract_pdf_text_stdlib(data: bytes) -> str:
     """
-    Extract readable text from a PDF using only stdlib.
-    Parses PDF content streams for BT/ET text blocks and Tj/TJ operators.
-    Works for most text-based PDFs (not scanned/image-only PDFs).
+    Stdlib-only PDF text extractor.
+    - Decompresses FlateDecode streams with zlib
+    - For each BT/ET block: processes Tj (single string), TJ (kerning array — pieces
+      are JOINED, not added separately), T* and Td/TD (line breaks), and ' (newline+show)
+    - Filters lines that are mostly binary garbage (alpha ratio < 25%)
     """
     import zlib
 
-    # Decompress FlateDecode streams, then scan for text operators
-    text_pieces: List[str] = []
+    _STR_RE = re.compile(r"\(((?:[^()\\]|\\[()\\nrtfb]|\\[0-7]{1,3})*)\)")
+    _OP_RE = re.compile(
+        r"\(((?:[^()\\]|\\[()\\nrtfb]|\\[0-7]{1,3})*)\)\s*Tj"    # (text) Tj
+        r"|\[((?:[^[\]]*(?:\((?:[^()\\]|\\.)*\)[^[\]]*)*)*)\]\s*TJ"  # [...] TJ
+        r"|T\*"                                                        # T* newline
+        r"|(-?\d+(?:\.\d*)?)\s+(-?\d+(?:\.\d*)?)\s+T[dD]"           # x y Td/TD
+        r"|\(((?:[^()\\]|\\[()\\nrtfb]|\\[0-7]{1,3})*)\)\s*'",      # (text) '
+        re.DOTALL,
+    )
 
-    # Try to decompress any zlib-compressed streams
-    raw = data
+    # Collect all content streams (decompress FlateDecode if possible)
+    raw_streams: List[bytes] = []
     for chunk in re.finditer(rb"stream\r?\n(.*?)\r?\nendstream", data, re.DOTALL):
-        stream = chunk.group(1)
+        s = chunk.group(1)
         try:
-            decompressed = zlib.decompress(stream)
-            raw = raw + b"\n" + decompressed
+            raw_streams.append(zlib.decompress(s))
         except Exception:
-            pass  # not a compressed stream
+            raw_streams.append(s)
+    if not raw_streams:
+        raw_streams = [data]
 
-    try:
-        text = raw.decode("latin-1", errors="replace")
-    except Exception:
-        text = raw.decode("utf-8", errors="replace")
+    all_lines: List[str] = []
 
-    # Extract text from BT...ET blocks
-    for block in re.finditer(r"BT(.*?)ET", text, re.DOTALL):
-        content = block.group(1)
-        # Tj operator: (text) Tj
-        for m in re.finditer(r"\(((?:[^()\\]|\\[()\\nrt])*)\)\s*Tj", content):
-            text_pieces.append(m.group(1))
-        # TJ operator: [(text) ...] TJ
-        for m in re.finditer(r"\[(.*?)\]\s*TJ", content, re.DOTALL):
-            for s in re.finditer(r"\(((?:[^()\\]|\\[()\\nrt])*)\)", m.group(1)):
-                text_pieces.append(s.group(1))
+    for raw in raw_streams:
+        try:
+            text = raw.decode("latin-1", errors="replace")
+        except Exception:
+            text = raw.decode("utf-8", errors="replace")
 
-    # Also try ' and " operators
-    for m in re.finditer(r"\(((?:[^()\\]|\\[()\\nrt])*)\)\s*['\"]", text):
-        text_pieces.append(m.group(1))
+        for block_m in re.finditer(r"BT(.*?)ET", text, re.DOTALL):
+            current: List[str] = []
+            block_lines: List[str] = []
 
-    # Clean PDF escape sequences
+            for op_m in _OP_RE.finditer(block_m.group(1)):
+                raw_op = op_m.group(0)
+                g1, g2, g3, g4, g5 = (
+                    op_m.group(1), op_m.group(2),
+                    op_m.group(3), op_m.group(4), op_m.group(5),
+                )
+
+                if raw_op.rstrip().endswith("Tj") and g1 is not None:
+                    current.append(g1)
+
+                elif raw_op.rstrip().endswith("TJ"):
+                    # Join all (string) pieces in the TJ array — fixes "Pyth"+"on"→"Python"
+                    arr = g2 or ""
+                    parts = [m.group(1) for m in _STR_RE.finditer(arr)]
+                    if parts:
+                        current.append("".join(parts))
+
+                elif raw_op.strip() == "T*":
+                    if current:
+                        block_lines.append("".join(current))
+                        current = []
+
+                elif "Td" in raw_op or "TD" in raw_op:
+                    # Significant vertical movement = new line
+                    try:
+                        y = float(g4 or "0")
+                    except (TypeError, ValueError):
+                        y = 0.0
+                    if abs(y) > 0.5 and current:
+                        block_lines.append("".join(current))
+                        current = []
+
+                elif raw_op.rstrip().endswith("'") and g5 is not None:
+                    # ' operator = newline + show text
+                    if current:
+                        block_lines.append("".join(current))
+                    current = [g5] if g5 else []
+
+            if current:
+                block_lines.append("".join(current))
+            all_lines.extend(block_lines)
+
+    # Decode PDF escape sequences and filter garbage
+    def _unescape(s: str) -> str:
+        s = (s.replace("\\n", " ").replace("\\r", " ")
+              .replace("\\t", " ").replace("\\(", "(")
+              .replace("\\)", ")").replace("\\\\", "\\"))
+        s = re.sub(r"\\([0-7]{1,3})", lambda m: chr(int(m.group(1), 8) % 128), s)
+        return s
+
     cleaned: List[str] = []
-    for piece in text_pieces:
-        piece = (piece.replace("\\n", "\n").replace("\\r", "\n")
-                 .replace("\\t", " ").replace("\\(", "(").replace("\\)", ")")
-                 .replace("\\\\", "\\"))
-        # Keep printable ASCII + newlines
-        piece = "".join(c for c in piece if 32 <= ord(c) <= 126 or c == "\n")
-        if piece.strip():
-            cleaned.append(piece)
+    for line in all_lines:
+        line = _unescape(line)
+        line = "".join(c for c in line if 32 <= ord(c) <= 126).strip()
+        if len(line) < 2:
+            continue
+        alpha = sum(c.isalpha() for c in line)
+        # Drop lines that are mostly non-alpha and contain no digits (binary garbage)
+        if alpha / len(line) < 0.25 and not re.search(r"\d", line):
+            continue
+        cleaned.append(line)
 
     return "\n".join(cleaned)
 
@@ -545,9 +598,17 @@ _SECTION_HEADERS = {
 def _detect_section(line: str) -> Optional[str]:
     """Return canonical section name if the line looks like a section header."""
     clean = line.strip().lower().rstrip(":").strip()
+    # Exact match first
     for sec, aliases in _SECTION_HEADERS.items():
         if clean in aliases:
             return sec
+    # Substring match: short, mostly-alpha lines that CONTAIN a known keyword
+    # Handles "PROFESSIONAL EXPERIENCE", "TECHNICAL SKILLS", "WORK HISTORY", etc.
+    if len(clean) < 50 and sum(c.isalpha() or c == " " for c in clean) / max(len(clean), 1) > 0.85:
+        for sec, aliases in _SECTION_HEADERS.items():
+            for alias in aliases:
+                if alias in clean:
+                    return sec
     return None
 
 
@@ -555,16 +616,18 @@ def _parse_plain_resume_text(text: str, source: str = "resume") -> Profile:
     """
     Parse plain text extracted from PDF or DOCX.
     Uses section-header detection + date-pattern heuristics to identify roles.
+    Supports 1-line (Title  Company  Date), 2-line (Title+Company / Date),
+    and 3-line (Title / Company / Date) role headers via 2-step lookahead.
     """
     profile = Profile()
-    lines = text.splitlines()
+    lines = [l.strip() for l in text.splitlines()]
+    n = len(lines)
     section = "experience"
     current_role: Optional[Role] = None
 
     i = 0
-    while i < len(lines):
-        raw = lines[i]
-        s = raw.strip()
+    while i < n:
+        s = lines[i]
         i += 1
 
         if not s:
@@ -578,40 +641,50 @@ def _parse_plain_resume_text(text: str, source: str = "resume") -> Profile:
             continue
 
         if section == "experience":
-            # A line followed by a date-range line is likely a role header
-            date_in_line = _DATE_PATTERN.search(s)
-            next_line = lines[i].strip() if i < len(lines) else ""
-            date_in_next = _DATE_PATTERN.search(next_line) if next_line else None
+            next1 = lines[i] if i < n else ""
+            next2 = lines[i + 1] if i + 1 < n else ""
+            date_here = _DATE_PATTERN.search(s)
+            date_n1 = _DATE_PATTERN.search(next1) if next1 else None
+            date_n2 = _DATE_PATTERN.search(next2) if next2 else None
 
-            if date_in_line or date_in_next:
-                # This line (or next) contains dates — likely "Title | Company | Date" or stacked
-                if date_in_line:
-                    # Try "Title  Company  Jan 2022 – Present" on same line
-                    date_match = _DATE_PATTERN.search(s)
-                    pre = s[:date_match.start()].strip(" |·–—-")
-                    parts = re.split(r"\s{2,}|\s*[|·]\s*", pre)
-                    title = parts[0].strip() if parts else pre
-                    company = parts[1].strip() if len(parts) > 1 else ""
-                    dates = date_match.group(0)
-                    start, end = _parse_dates(dates)
-                    current_role = Role(title=title, company=company, start=start, end=end, location="")
-                    profile.experience.append(current_role)
-                else:
-                    # Title on this line, date on next
-                    parts = re.split(r"\s{2,}|\s*[|·]\s*", s)
-                    title = parts[0].strip()
-                    company = parts[1].strip() if len(parts) > 1 else ""
-                    date_str = next_line
-                    d = _DATE_PATTERN.search(date_str)
-                    start, end = _parse_dates(d.group(0)) if d else ("", "")
-                    current_role = Role(title=title, company=company, start=start, end=end, location="")
-                    profile.experience.append(current_role)
-                    i += 1  # consume the date line
+            if date_here:
+                # "Title  Company  Jan 2022 – Present" all on one line
+                dm = date_here
+                pre = s[:dm.start()].strip(" |·–—-")
+                parts = re.split(r"\s{2,}|\s*[|·–]\s*", pre)
+                title = parts[0].strip() if parts else pre
+                company = parts[1].strip() if len(parts) > 1 else ""
+                start, end = _parse_dates(dm.group(0))
+                current_role = Role(title=title, company=company, start=start, end=end, location="")
+                profile.experience.append(current_role)
                 continue
 
-            # Bullet lines
-            if current_role and (s.startswith(("•", "-", "–", "*", "·")) or (len(s) > 20 and s[0].isupper())):
-                txt = s.lstrip("•-–*· ").strip()
+            if date_n1:
+                # Title [+ company] on this line, date on next line
+                parts = re.split(r"\s{2,}|\s*[|·–]\s*", s)
+                title = parts[0].strip()
+                company = parts[1].strip() if len(parts) > 1 else ""
+                d = _DATE_PATTERN.search(next1)
+                start, end = _parse_dates(d.group(0)) if d else ("", "")
+                current_role = Role(title=title, company=company, start=start, end=end, location="")
+                profile.experience.append(current_role)
+                i += 1  # consume date line
+                continue
+
+            if date_n2 and next1 and not _detect_section(next1):
+                # 3-line pattern: Title / Company / Date
+                title = s.strip()
+                company = next1.strip()
+                d = _DATE_PATTERN.search(next2)
+                start, end = _parse_dates(d.group(0)) if d else ("", "")
+                current_role = Role(title=title, company=company, start=start, end=end, location="")
+                profile.experience.append(current_role)
+                i += 2  # consume company and date lines
+                continue
+
+            # Bullet lines — require explicit bullet prefix
+            if current_role and s.startswith(("•", "-", "–", "*", "·", "○", "▪")):
+                txt = s.lstrip("•-–*·○▪ ").strip()
                 if len(txt) > 15:
                     bullet = Bullet(
                         text=txt,
@@ -623,16 +696,25 @@ def _parse_plain_resume_text(text: str, source: str = "resume") -> Profile:
                     current_role.bullets.append(bullet)
 
         elif section == "education":
-            if s and not s.startswith(("•", "-")):
+            if not s.startswith(("•", "-")):
                 date_m = _DATE_PATTERN.search(s)
-                if date_m or any(kw in s.lower() for kw in ("university", "college", "institute", "school", "master", "bachelor", "phd")):
+                if date_m or any(kw in s.lower() for kw in ("university", "college", "institute", "school", "master", "bachelor", "phd", "b.s", "m.s", "b.e", "m.e")):
                     profile.education.append({"institution": s, "degree": "", "dates": "", "location": ""})
 
         elif section == "skills":
-            for sk in re.split(r"[,;|•·\n]", s):
-                sk = sk.strip(" -*•·")
-                if sk and len(sk) > 1:
-                    profile.skills.append(sk)
+            # Split on commas and semicolons; pipes separate categories, keep both sides
+            for sk in re.split(r"[,;]", s):
+                sk = sk.strip(" -*•·|")
+                # Strip leading category label "Languages: Python SQL" → add each word
+                colon_m = re.match(r"^[A-Za-z /&]+:\s*(.+)$", sk)
+                if colon_m:
+                    for item in re.split(r"[,;/\s]+", colon_m.group(1)):
+                        item = item.strip()
+                        if item and len(item) > 1:
+                            profile.skills.append(item)
+                else:
+                    if sk and len(sk) > 1:
+                        profile.skills.append(sk)
 
         elif section == "certifications":
             clean_s = s.strip(" -•*·")

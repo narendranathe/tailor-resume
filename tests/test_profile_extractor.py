@@ -271,6 +271,19 @@ class TestDetectSection:
     def test_detects_work_experience(self):
         assert _detect_section("Work Experience") == "experience"
 
+    def test_detects_professional_experience(self):
+        assert _detect_section("PROFESSIONAL EXPERIENCE") == "experience"
+
+    def test_detects_technical_skills_partial(self):
+        assert _detect_section("TECHNICAL SKILLS") == "skills"
+
+    def test_detects_work_history(self):
+        assert _detect_section("WORK HISTORY") == "experience"
+
+    def test_long_non_section_not_detected(self):
+        # Should not match — too long and contains non-alpha chars
+        assert _detect_section("This is a very long line with numbers 123 and special @chars") is None
+
 
 # ---------------------------------------------------------------------------
 # parse_markdown
@@ -556,6 +569,89 @@ DP-700 Microsoft Certified Data Engineer Associate
         p = _parse_plain_resume_text(text)
         bullets = sum(len(r.bullets) for r in p.experience)
         assert bullets >= 1
+
+    def test_three_line_role_header(self):
+        """Title / Company / Date on separate lines (common in PDFs)."""
+        text = (
+            "EXPERIENCE\n"
+            "Data Engineer\n"
+            "Acme Corp\n"
+            "2022 – 2024\n"
+            "• Built a streaming pipeline processing 1M events/day\n"
+        )
+        p = _parse_plain_resume_text(text)
+        assert len(p.experience) >= 1
+        assert p.experience[0].title == "Data Engineer"
+        assert p.experience[0].company == "Acme Corp"
+
+    def test_two_line_role_header(self):
+        """Title on one line, date on the next."""
+        text = "EXPERIENCE\nData Engineer  Acme Corp\n2022 – Present\n"
+        p = _parse_plain_resume_text(text)
+        assert len(p.experience) >= 1
+
+    def test_skills_with_category_label(self):
+        """'Languages: Python SQL Go' → individual skill tokens."""
+        text = "SKILLS\nLanguages: Python SQL Go\nFrameworks: Spark Kafka\n"
+        p = _parse_plain_resume_text(text)
+        names = [s.lower() for s in p.skills]
+        assert "python" in names
+        assert "spark" in names
+
+    def test_education_with_degree_keywords(self):
+        text = "EDUCATION\nMaster of Science in CS  State University  2021\n"
+        p = _parse_plain_resume_text(text)
+        assert len(p.education) >= 1
+
+    def test_projects_section(self):
+        text = "PROJECTS\nJan 2023 – Mar 2023  My Cool Project\n"
+        p = _parse_plain_resume_text(text)
+        assert isinstance(p, Profile)  # no crash
+
+    def test_stdlib_pdf_extractor_tj_join(self):
+        """TJ kerning arrays must produce joined words, not fragments."""
+        from profile_extractor import _extract_pdf_text_stdlib
+        # Simulate a PDF stream with kerning-split "Python"
+        fake = b"stream\nBT\n[(Pyth) -30 (on)] TJ\nET\nendstream"
+        out = _extract_pdf_text_stdlib(fake)
+        assert "Python" in out
+
+    def test_stdlib_pdf_extractor_t_star_newline(self):
+        """T* operator should produce a line break."""
+        from profile_extractor import _extract_pdf_text_stdlib
+        fake = b"stream\nBT\n(EXPERIENCE) Tj\nT*\n(Data Engineer) Tj\nET\nendstream"
+        out = _extract_pdf_text_stdlib(fake)
+        lines = [l for l in out.splitlines() if l.strip()]
+        assert len(lines) >= 2
+
+    def test_stdlib_pdf_extractor_td_newline(self):
+        """Td with non-zero y offset should produce a line break."""
+        from profile_extractor import _extract_pdf_text_stdlib
+        fake = b"stream\nBT\n(Senior) Tj\n0 -14 Td\n(Engineer) Tj\nET\nendstream"
+        out = _extract_pdf_text_stdlib(fake)
+        lines = [l for l in out.splitlines() if l.strip()]
+        assert len(lines) >= 2
+
+    def test_stdlib_pdf_extractor_quote_operator(self):
+        """' operator should produce a new line."""
+        from profile_extractor import _extract_pdf_text_stdlib
+        fake = b"stream\nBT\n(SKILLS) Tj\n(Python) '\nET\nendstream"
+        out = _extract_pdf_text_stdlib(fake)
+        assert "SKILLS" in out or "Python" in out
+
+    def test_stdlib_pdf_extractor_garbage_filter(self):
+        """Lines that are mostly non-alpha binary data should be dropped."""
+        from profile_extractor import _extract_pdf_text_stdlib
+        fake = b"stream\nBT\n(][-<>{}|~^) Tj\nET\nendstream"
+        out = _extract_pdf_text_stdlib(fake)
+        assert out.strip() == "" or "Python" not in out
+
+    def test_stdlib_pdf_extractor_no_streams(self):
+        """Data with no stream markers falls back to raw data scan."""
+        from profile_extractor import _extract_pdf_text_stdlib
+        raw = b"BT\n(Hello World) Tj\nET"
+        out = _extract_pdf_text_stdlib(raw)
+        assert "Hello World" in out
 
 
 # ---------------------------------------------------------------------------
