@@ -444,6 +444,33 @@ def _pdf_hex_to_text(hex_str: str) -> str:
     return "".join(chr(b) for b in raw if 32 <= b <= 126)
 
 
+# LaTeX OT1 font encoding — byte values that don't map to their ASCII equivalents.
+# Applied after latin-1 decode, before the printable-char filter.
+_OT1_MAP: dict = {
+    "\x0c": "fi",    # fi ligature
+    "\x0d": "fl",    # fl ligature
+    "\x0e": "ff",    # ff ligature
+    "\x0f": "ffi",   # ffi ligature
+    "\x10": "ffl",   # ffl ligature
+    "\x7b": "\u2013",  # { → en dash
+    "\x7c": "\u2014",  # | → em dash
+    "\x95": "\u2022",  # latin-1 bullet (0x95) → •
+    # Unicode precomposed ligatures (some PDF ToUnicode CMaps emit these)
+    "\ufb00": "ff",
+    "\ufb01": "fi",
+    "\ufb02": "fl",
+    "\ufb03": "ffi",
+    "\ufb04": "ffl",
+}
+
+
+def _apply_ot1(s: str) -> str:
+    """Substitute OT1-encoded bytes/ligature chars with readable equivalents."""
+    for src, dst in _OT1_MAP.items():
+        s = s.replace(src, dst)
+    return s
+
+
 def _extract_pdf_text_stdlib(data: bytes) -> str:
     """
     Stdlib-only PDF text extractor. No regex on unbounded content — avoids
@@ -576,7 +603,18 @@ def _extract_pdf_text_stdlib(data: bytes) -> str:
                                 else:
                                     ap += 1
                             else:
-                                ap += 1
+                                # Kerning number — large negative value = word space
+                                num_m = re.match(r"-?\d+(?:\.\d*)?", arr[ap:])
+                                if num_m:
+                                    try:
+                                        kern = float(num_m.group())
+                                        if kern < -150 and parts:
+                                            parts.append(" ")
+                                    except ValueError:
+                                        pass
+                                    ap += num_m.end()
+                                else:
+                                    ap += 1
                         if parts:
                             current.append("".join(parts))
                         pos = k + 2
@@ -627,7 +665,8 @@ def _extract_pdf_text_stdlib(data: bytes) -> str:
     cleaned: List[str] = []
     for line in all_lines:
         line = _unescape(line)
-        line = "".join(c for c in line if 32 <= ord(c) <= 126).strip()
+        line = _apply_ot1(line)
+        line = "".join(c for c in line if c.isprintable()).strip()
         if len(line) < 2:
             continue
         alpha = sum(c.isalpha() for c in line)
@@ -799,7 +838,17 @@ def _parse_plain_resume_text(text: str, source: str = "resume") -> Profile:
                 title = parts[0].strip() if parts else pre
                 company = parts[1].strip() if len(parts) > 1 else ""
                 start, end = _parse_dates(dm.group(0))
-                current_role = Role(title=title, company=company, start=start, end=end, location="")
+                location = ""
+                # 2-column LaTeX layout: company on the next line (no date, no section, no bullet)
+                if (not company and next1
+                        and not _detect_section(next1)
+                        and not _DATE_PATTERN.search(next1)
+                        and not next1.startswith(("•", "-", "–", "*", "·", "○", "▪"))):
+                    loc_parts = re.split(r"\s{2,}", next1.strip())
+                    company = loc_parts[0].strip()
+                    location = loc_parts[1].strip() if len(loc_parts) > 1 else ""
+                    i += 1  # consume company line
+                current_role = Role(title=title, company=company, start=start, end=end, location=location)
                 profile.experience.append(current_role)
                 continue
 

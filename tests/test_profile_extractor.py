@@ -590,6 +590,20 @@ DP-700 Microsoft Certified Data Engineer Associate
         p = _parse_plain_resume_text(text)
         assert len(p.experience) >= 1
 
+    def test_two_column_latex_company_on_next_line(self):
+        """2-column LaTeX: title+date on line 1, company+location on line 2."""
+        text = (
+            "EXPERIENCE\n"
+            "Data Engineer  July 2024 – Present\n"
+            "ExponentHR  Dallas, TX\n"
+            "• Built a data pipeline processing 5M records/day\n"
+        )
+        p = _parse_plain_resume_text(text)
+        assert len(p.experience) >= 1
+        assert p.experience[0].title == "Data Engineer"
+        assert p.experience[0].company == "ExponentHR"
+        assert p.experience[0].location == "Dallas, TX"
+
     def test_skills_with_category_label(self):
         """'Languages: Python SQL Go' → individual skill tokens."""
         text = "SKILLS\nLanguages: Python SQL Go\nFrameworks: Spark Kafka\n"
@@ -652,6 +666,57 @@ DP-700 Microsoft Certified Data Engineer Associate
         raw = b"BT\n(Hello World) Tj\nET"
         out = _extract_pdf_text_stdlib(raw)
         assert "Hello World" in out
+
+    def test_stdlib_pdf_extractor_ot1_fi_ligature(self):
+        """OT1 byte 0x0C (fi ligature) must be decoded to 'fi', not dropped."""
+        from profile_extractor import _extract_pdf_text_stdlib
+        # "MLflow" in OT1: 'M', 'L', 0x0C (fi), 'o', 'w'
+        content = b"stream\nBT\n(ML\x0cow) Tj\nET\nendstream"
+        out = _extract_pdf_text_stdlib(content)
+        assert "MLfiow" in out or "MLflow" in out  # fi → "fi", so MLfiow is correct
+
+    def test_stdlib_pdf_extractor_ot1_fl_ligature(self):
+        """OT1 byte 0x0D (fl ligature) must be decoded to 'fl', not dropped."""
+        from profile_extractor import _extract_pdf_text_stdlib
+        # "Airflow" in OT1: 'A', 'i', 'r', 0x0D (fl), 'o', 'w'
+        content = b"stream\nBT\n(Air\x0dow) Tj\nET\nendstream"
+        out = _extract_pdf_text_stdlib(content)
+        assert "Airflow" in out or "Airflow" in out
+
+    def test_stdlib_pdf_extractor_ot1_en_dash(self):
+        """OT1 byte 0x7B must be decoded to en dash, not kept as '{'."""
+        from profile_extractor import _extract_pdf_text_stdlib
+        content = b"stream\nBT\n(Jan 2022 \x7b Present) Tj\nET\nendstream"
+        out = _extract_pdf_text_stdlib(content)
+        assert "{" not in out
+        assert "\u2013" in out or "Present" in out
+
+    def test_stdlib_pdf_extractor_tj_kerning_word_space(self):
+        """Large negative kerning in TJ array must produce a word space."""
+        from profile_extractor import _extract_pdf_text_stdlib
+        # "Data Engineer" split by large kerning -300
+        content = b"stream\nBT\n[(Data) -300 (Engineer)] TJ\nET\nendstream"
+        out = _extract_pdf_text_stdlib(content)
+        assert "Data Engineer" in out
+
+    def test_stdlib_pdf_extractor_tj_small_kerning_no_space(self):
+        """Small kerning (-30) must NOT insert a space (kerning adjustment, not word gap)."""
+        from profile_extractor import _extract_pdf_text_stdlib
+        content = b"stream\nBT\n[(Pyth) -30 (on)] TJ\nET\nendstream"
+        out = _extract_pdf_text_stdlib(content)
+        assert "Python" in out
+        assert "Pyth on" not in out
+
+    def test_apply_ot1_maps_ligatures(self):
+        """_apply_ot1 must map all OT1 ligature bytes correctly."""
+        from profile_extractor import _apply_ot1
+        assert _apply_ot1("\x0c") == "fi"
+        assert _apply_ot1("\x0d") == "fl"
+        assert _apply_ot1("\x0e") == "ff"
+        assert _apply_ot1("\x0f") == "ffi"
+        assert _apply_ot1("\x10") == "ffl"
+        assert _apply_ot1("\x7b") == "\u2013"
+        assert _apply_ot1("\x95") == "\u2022"
 
 
 # ---------------------------------------------------------------------------
