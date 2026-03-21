@@ -386,30 +386,81 @@ def parse_linkedin(text: str) -> Profile:
 # PDF text extraction — stdlib fallback (no external deps required)
 # ---------------------------------------------------------------------------
 
+def _pdf_read_string(block: str, pos: int) -> tuple:
+    """
+    Read a PDF literal string starting at pos (which should point at '(').
+    Returns (content, new_pos). Handles nested parens and backslash escapes.
+    No regex — O(n), no backtracking.
+    """
+    assert block[pos] == "("
+    pos += 1
+    depth = 1
+    buf: List[str] = []
+    while pos < len(block) and depth > 0:
+        c = block[pos]
+        if c == "\\":
+            if pos + 1 < len(block):
+                buf.append(c)
+                buf.append(block[pos + 1])
+                pos += 2
+            else:
+                pos += 1
+        elif c == "(":
+            depth += 1
+            buf.append(c)
+            pos += 1
+        elif c == ")":
+            depth -= 1
+            if depth > 0:
+                buf.append(c)
+            pos += 1
+        else:
+            buf.append(c)
+            pos += 1
+    return "".join(buf), pos
+
+
+def _pdf_hex_to_text(hex_str: str) -> str:
+    """
+    Decode a PDF hex string <XXXX> as UTF-16-BE (common in CIDFont/Word PDFs).
+    Falls back to latin-1 byte-by-byte if UTF-16-BE fails.
+    """
+    hex_str = re.sub(r"\s+", "", hex_str)
+    if len(hex_str) % 2 != 0:
+        hex_str += "0"
+    try:
+        raw = bytes.fromhex(hex_str)
+    except ValueError:
+        return ""
+    # Try UTF-16-BE first (most common for Unicode PDFs)
+    if len(raw) % 2 == 0:
+        try:
+            text = raw.decode("utf-16-be", errors="strict")
+            # Filter to printable ASCII range for resume text
+            return "".join(c for c in text if 32 <= ord(c) <= 126)
+        except Exception:
+            pass
+    # Fallback: latin-1
+    return "".join(chr(b) for b in raw if 32 <= b <= 126)
+
+
 def _extract_pdf_text_stdlib(data: bytes) -> str:
     """
-    Stdlib-only PDF text extractor.
-    - Decompresses FlateDecode streams with zlib
-    - For each BT/ET block: processes Tj (single string), TJ (kerning array — pieces
-      are JOINED, not added separately), T* and Td/TD (line breaks), and ' (newline+show)
-    - Filters lines that are mostly binary garbage (alpha ratio < 25%)
+    Stdlib-only PDF text extractor. No regex on unbounded content — avoids
+    catastrophic backtracking on large PDFs.
+
+    Handles:
+    - FlateDecode (zlib) compressed streams
+    - Literal strings (text) Tj / [(text) kern] TJ — joins kerning pieces
+    - Hex strings <XXXX> Tj / [<XXXX>] TJ — UTF-16-BE decode (Word/GDocs PDFs)
+    - T*, Td/TD, ' operators for line breaks
     """
     import zlib
 
-    _STR_RE = re.compile(r"\(((?:[^()\\]|\\[()\\nrtfb]|\\[0-7]{1,3})*)\)")
-    _OP_RE = re.compile(
-        r"\(((?:[^()\\]|\\[()\\nrtfb]|\\[0-7]{1,3})*)\)\s*Tj"    # (text) Tj
-        r"|\[((?:[^[\]]*(?:\((?:[^()\\]|\\.)*\)[^[\]]*)*)*)\]\s*TJ"  # [...] TJ
-        r"|T\*"                                                        # T* newline
-        r"|(-?\d+(?:\.\d*)?)\s+(-?\d+(?:\.\d*)?)\s+T[dD]"           # x y Td/TD
-        r"|\(((?:[^()\\]|\\[()\\nrtfb]|\\[0-7]{1,3})*)\)\s*'",      # (text) '
-        re.DOTALL,
-    )
-
-    # Collect all content streams (decompress FlateDecode if possible)
+    # Decompress all FlateDecode streams
     raw_streams: List[bytes] = []
-    for chunk in re.finditer(rb"stream\r?\n(.*?)\r?\nendstream", data, re.DOTALL):
-        s = chunk.group(1)
+    for m in re.finditer(rb"stream\r?\n(.*?)\r?\nendstream", data, re.DOTALL):
+        s = m.group(1)
         try:
             raw_streams.append(zlib.decompress(s))
         except Exception:
@@ -421,57 +472,151 @@ def _extract_pdf_text_stdlib(data: bytes) -> str:
 
     for raw in raw_streams:
         try:
-            text = raw.decode("latin-1", errors="replace")
+            txt = raw.decode("latin-1", errors="replace")
         except Exception:
-            text = raw.decode("utf-8", errors="replace")
+            txt = raw.decode("utf-8", errors="replace")
 
-        for block_m in re.finditer(r"BT(.*?)ET", text, re.DOTALL):
+        for block_m in re.finditer(r"BT(.*?)ET", txt, re.DOTALL):
+            block = block_m.group(1)
+            n = len(block)
             current: List[str] = []
             block_lines: List[str] = []
+            pos = 0
 
-            for op_m in _OP_RE.finditer(block_m.group(1)):
-                raw_op = op_m.group(0)
-                g1, g2, g3, g4, g5 = (
-                    op_m.group(1), op_m.group(2),
-                    op_m.group(3), op_m.group(4), op_m.group(5),
-                )
+            while pos < n:
+                c = block[pos]
 
-                if raw_op.rstrip().endswith("Tj") and g1 is not None:
-                    current.append(g1)
+                # Skip whitespace
+                if c in " \t\r\n":
+                    pos += 1
+                    continue
 
-                elif raw_op.rstrip().endswith("TJ"):
-                    # Join all (string) pieces in the TJ array — fixes "Pyth"+"on"→"Python"
-                    arr = g2 or ""
-                    parts = [m.group(1) for m in _STR_RE.finditer(arr)]
-                    if parts:
-                        current.append("".join(parts))
+                # Literal string: (text)
+                if c == "(":
+                    s, pos = _pdf_read_string(block, pos)
+                    # Peek at next non-whitespace token
+                    j = pos
+                    while j < n and block[j] in " \t\r\n":
+                        j += 1
+                    if j < n:
+                        if block[j:j+2] == "Tj" and (j + 2 >= n or not block[j+2].isalpha()):
+                            current.append(s)
+                            pos = j + 2
+                        elif block[j] == "'":
+                            if current:
+                                block_lines.append("".join(current))
+                            current = [s] if s else []
+                            pos = j + 1
+                        else:
+                            pos = j  # string not followed by Tj/'; skip
+                    continue
 
-                elif raw_op.strip() == "T*":
+                # Hex string: <hex>
+                if c == "<" and (pos + 1 >= n or block[pos + 1] != "<"):
+                    end = block.find(">", pos + 1)
+                    if end == -1:
+                        pos += 1
+                        continue
+                    hex_content = block[pos + 1:end]
+                    pos = end + 1
+                    # Peek at next token
+                    j = pos
+                    while j < n and block[j] in " \t\r\n":
+                        j += 1
+                    if j < n and block[j:j+2] == "Tj" and (j + 2 >= n or not block[j+2].isalpha()):
+                        decoded = _pdf_hex_to_text(hex_content)
+                        if decoded:
+                            current.append(decoded)
+                        pos = j + 2
+                    continue
+
+                # TJ array: [ ... ] TJ
+                if c == "[":
+                    # Scan for matching ] without regex
+                    depth = 1
+                    j = pos + 1
+                    while j < n and depth > 0:
+                        if block[j] == "[":
+                            depth += 1
+                            j += 1
+                        elif block[j] == "]":
+                            depth -= 1
+                            j += 1
+                        elif block[j] == "(":
+                            # skip string content
+                            _, j = _pdf_read_string(block, j)
+                        elif block[j] == "<" and (j + 1 >= n or block[j + 1] != "<"):
+                            end = block.find(">", j + 1)
+                            j = end + 1 if end != -1 else j + 1
+                        elif block[j] == "\\":
+                            j += 2
+                        else:
+                            j += 1
+                    arr_end = j
+                    # Check for TJ
+                    k = arr_end
+                    while k < n and block[k] in " \t\r\n":
+                        k += 1
+                    if k < n and block[k:k+2] == "TJ" and (k + 2 >= n or not block[k+2].isalpha()):
+                        # Extract all literal and hex strings from the array
+                        arr = block[pos + 1:arr_end - 1]
+                        parts: List[str] = []
+                        ap = 0
+                        an = len(arr)
+                        while ap < an:
+                            ac = arr[ap]
+                            if ac == "(":
+                                s, ap = _pdf_read_string(arr, ap)
+                                parts.append(s)
+                            elif ac == "<" and (ap + 1 >= an or arr[ap + 1] != "<"):
+                                aend = arr.find(">", ap + 1)
+                                if aend != -1:
+                                    parts.append(_pdf_hex_to_text(arr[ap + 1:aend]))
+                                    ap = aend + 1
+                                else:
+                                    ap += 1
+                            else:
+                                ap += 1
+                        if parts:
+                            current.append("".join(parts))
+                        pos = k + 2
+                    else:
+                        pos = arr_end
+                    continue
+
+                # T* — explicit newline
+                if block[pos:pos+2] == "T*":
                     if current:
                         block_lines.append("".join(current))
                         current = []
+                    pos += 2
+                    continue
 
-                elif "Td" in raw_op or "TD" in raw_op:
-                    # Significant vertical movement = new line
+                # Td or TD — position move; significant y = new line
+                m2 = re.match(r"(-?\d+(?:\.\d*)?)\s+(-?\d+(?:\.\d*)?)\s+T[dD]", block[pos:])
+                if m2:
                     try:
-                        y = float(g4 or "0")
-                    except (TypeError, ValueError):
+                        y = float(m2.group(2))
+                    except ValueError:
                         y = 0.0
                     if abs(y) > 0.5 and current:
                         block_lines.append("".join(current))
                         current = []
+                    pos += m2.end()
+                    continue
 
-                elif raw_op.rstrip().endswith("'") and g5 is not None:
-                    # ' operator = newline + show text
-                    if current:
-                        block_lines.append("".join(current))
-                    current = [g5] if g5 else []
+                # Skip any other token (numbers, font ops, etc.)
+                m2 = re.match(r"\S+", block[pos:])
+                if m2:
+                    pos += m2.end()
+                else:
+                    pos += 1
 
             if current:
                 block_lines.append("".join(current))
             all_lines.extend(block_lines)
 
-    # Decode PDF escape sequences and filter garbage
+    # Decode PDF escape sequences and filter garbage lines
     def _unescape(s: str) -> str:
         s = (s.replace("\\n", " ").replace("\\r", " ")
               .replace("\\t", " ").replace("\\(", "(")
@@ -486,7 +631,6 @@ def _extract_pdf_text_stdlib(data: bytes) -> str:
         if len(line) < 2:
             continue
         alpha = sum(c.isalpha() for c in line)
-        # Drop lines that are mostly non-alpha and contain no digits (binary garbage)
         if alpha / len(line) < 0.25 and not re.search(r"\d", line):
             continue
         cleaned.append(line)
