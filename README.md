@@ -1,6 +1,6 @@
 # tailor-resume
 
-[![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://tailor-resume.streamlit.app)
+[![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://tailor-resume-ai.streamlit.app/)
 [![CI](https://github.com/narendranathe/tailor-resume/actions/workflows/ci.yml/badge.svg)](https://github.com/narendranathe/tailor-resume/actions/workflows/ci.yml)
 
 ATS-optimized, recruiter-ready, single-page resume tailoring — powered by Claude Code.
@@ -24,7 +24,7 @@ Paste a job description and your work history. Get a tailored LaTeX resume with 
 | **Streamlit web app** (3-tab browser UI) | ✅ Done | profile→tailor→download + SQLite save/load sidebar |
 | **PyPI package** (`pip install tailor-resume`) | ✅ Done | `pyproject.toml` + `tailor_resume/` package + Python API |
 | **Docker image** (`docker run narendranathe/tailor-resume`) | 📋 [#33](https://github.com/narendranathe/tailor-resume/issues/33) | bundles Python + pdflatex + deps; one command → PDF |
-| Streamlit Community Cloud deploy | 📋 Pending | push to cloud, point at `streamlit_app/app.py` |
+| Streamlit Community Cloud deploy | ✅ Live | https://tailor-resume-ai.streamlit.app/ |
 | Fly.io MCP deploy | 📋 Pending | `fly deploy` — needs `FLY_API_TOKEN` secret in GitHub |
 | PyPI publish | 📋 Pending | configure trusted publisher, push `v0.1.0` tag |
 
@@ -337,7 +337,7 @@ ATS tip: verify your resume is machine-readable by selecting and copying text fr
 
 ## Option C: Streamlit web app (browser-based, no Claude Code required)
 
-[![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://tailor-resume.streamlit.app)
+[![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://tailor-resume-ai.streamlit.app/)
 
 A browser-based UI — paste your resume and JD, get an ATS score, gap analysis, and a downloadable `.tex` file. No Claude Code or terminal required.
 
