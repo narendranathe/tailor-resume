@@ -1116,6 +1116,130 @@ RESUME TEXT:
     return profile
 
 
+def _enrich_profile_with_claude(profile: Profile, source: str = "") -> Profile:
+    """
+    Enrich an already-parsed Profile using Claude as a resume coach.
+
+    This is a SECOND PASS over the profile — called AFTER parse_pdf() has
+    produced a clean Profile via pdfminer + regex.  It is never part of
+    extraction or structural parsing.
+
+    What Claude does here:
+        1. Rewrites weak bullets into STAR format (Situation/Task/Action/Result),
+           active voice, with quantified impact — without inventing facts.
+        2. Flags bullets where the impact claim seems unsupported or vague
+           by setting confidence = "low".
+        3. Surfaces skills mentioned in bullets that are missing from the
+           profile's skills list.
+
+    Falls back to the original profile on any API error, missing key, or
+    JSON parse failure — enrichment is never blocking.
+
+    Architecture:
+        parse_pdf()  →  pdfminer + regex  →  Profile  (deterministic, offline)
+        enrich_profile()  →  Claude  →  improved Profile  (opt-in, online)
+    """
+    import json
+    import os
+
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key:
+        return profile
+
+    try:
+        from anthropic import Anthropic
+    except ImportError:
+        return profile
+
+    try:
+        profile_dict = profile_to_dict(profile)
+        profile_json = json.dumps(profile_dict, indent=2)
+
+        prompt = f"""You are a resume coach. The JSON below is a structured resume profile.
+Your job is to IMPROVE it — do NOT invent facts, do NOT change numbers, do NOT fabricate metrics.
+
+Instructions:
+1. Rewrite weak bullets into stronger STAR format (active voice, quantified impact).
+   Only rewrite if the original is passive / vague — preserve strong bullets verbatim.
+2. For each bullet, set the "confidence" field to "high" (clear quantified evidence),
+   "medium" (some evidence), or "low" (vague claim, no numbers, or passive voice).
+3. Add to the "skills" list any skills you see mentioned in bullets that are not
+   already listed there.
+
+Return ONLY valid JSON with the same schema. No markdown, no explanation.
+
+PROFILE:
+{profile_json}"""
+
+        client = Anthropic(api_key=api_key)
+        response = client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=4096,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        raw = response.content[0].text.strip()
+        if raw.startswith("```"):
+            raw = re.sub(r"^```[a-z]*\n?", "", raw)
+            raw = re.sub(r"\n?```$", "", raw)
+        data = json.loads(raw)
+    except Exception:
+        return profile  # enrichment never blocks; return original on any failure
+
+    # Rebuild profile from enriched JSON — same reconstruction as _parse_with_claude
+    enriched = Profile()
+    for r in data.get("experience", []):
+        bullets = [
+            Bullet(
+                text=b if isinstance(b, str) else b.get("text", ""),
+                metrics=extract_metrics(b if isinstance(b, str) else b.get("text", "")),
+                tools=extract_tools(b if isinstance(b, str) else b.get("text", "")),
+                evidence_source=source or "claude_enrichment",
+                confidence=(b.get("confidence", "medium") if isinstance(b, dict) else "medium"),
+            )
+            for b in r.get("bullets", [])
+            if b
+        ]
+        enriched.experience.append(Role(
+            title=r.get("title", ""),
+            company=r.get("company", ""),
+            start=r.get("start", ""),
+            end=r.get("end", ""),
+            location=r.get("location", ""),
+            bullets=bullets,
+        ))
+
+    for p in data.get("projects", []):
+        bullets = [
+            Bullet(
+                text=b if isinstance(b, str) else b.get("text", ""),
+                metrics=extract_metrics(b if isinstance(b, str) else b.get("text", "")),
+                tools=extract_tools(b if isinstance(b, str) else b.get("text", "")),
+                evidence_source=source or "claude_enrichment",
+                confidence="medium",
+            )
+            for b in p.get("bullets", [])
+            if b
+        ]
+        enriched.projects.append(Project(
+            name=p.get("name", ""),
+            tech=p.get("tech", []),
+            bullets=bullets,
+        ))
+
+    enriched.skills = _dedupe([s for s in data.get("skills", []) if isinstance(s, str)])
+    enriched.education = [
+        {
+            "institution": e.get("institution", ""),
+            "degree": e.get("degree", ""),
+            "dates": e.get("dates", ""),
+            "location": e.get("location", ""),
+        }
+        for e in data.get("education", [])
+    ]
+    enriched.certifications = [c for c in data.get("certifications", []) if isinstance(c, str)]
+    return enriched
+
+
 def parse_pdf(file_bytes: bytes, source: str = "pdf_resume") -> Profile:
     """
     Extract text from a PDF file and parse it into a Profile.
@@ -1164,9 +1288,6 @@ def parse_pdf(file_bytes: bytes, source: str = "pdf_resume") -> Profile:
     if "\\resumeSubheading" in text or "\\resumeItem" in text:
         return parse_latex(text, source=source)
 
-    # Claude is opt-in enrichment, not the primary parser
-    if os.environ.get("ANTHROPIC_API_KEY"):
-        return _parse_with_claude(text, source=source)
     return _parse_plain_resume_text(text, source=source)
 
 

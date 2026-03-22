@@ -23,7 +23,7 @@ if "profile_extractor" in sys.modules and not hasattr(sys.modules["profile_extra
 
 from profile_extractor import (
     parse_blob, parse_markdown, parse_latex, parse_linkedin,
-    parse_pdf, parse_docx, auto_detect_format,
+    parse_pdf, parse_docx, auto_detect_format, _enrich_profile_with_claude,
 )
 
 _TEXT_PARSERS = {
@@ -137,3 +137,53 @@ def render():
     if st.session_state.get("profile_dict"):
         with st.expander("Parsed profile (JSON)", expanded=False):
             st.json(st.session_state.profile_dict)
+
+    # ---- Enrich with AI (opt-in, requires ANTHROPIC_API_KEY) ---------------
+    if st.session_state.get("profile_dict") and os.environ.get("ANTHROPIC_API_KEY"):
+        st.divider()
+        st.subheader("AI Enrichment")
+        st.caption(
+            "Claude reviews your bullets and rewrites weak ones into STAR format "
+            "(active voice, quantified). Facts are never changed — only phrasing improved."
+        )
+        if st.button("✨ Enhance with AI", help="Requires ANTHROPIC_API_KEY in .env"):
+            from dataclasses import asdict
+            from resume_types import Profile, Role, Bullet, Project
+
+            # Reconstruct Profile from session dict so we can pass it to enrichment
+            try:
+                raw_dict = st.session_state.profile_dict
+                profile_obj = Profile(
+                    experience=[
+                        Role(
+                            title=r["title"], company=r["company"],
+                            start=r["start"], end=r["end"], location=r["location"],
+                            bullets=[Bullet(**b) for b in r.get("bullets", [])],
+                        )
+                        for r in raw_dict.get("experience", [])
+                    ],
+                    projects=[
+                        Project(
+                            name=p["name"], tech=p.get("tech", []),
+                            bullets=[Bullet(**b) for b in p.get("bullets", [])],
+                            date=p.get("date", ""),
+                        )
+                        for p in raw_dict.get("projects", [])
+                    ],
+                    skills=raw_dict.get("skills", []),
+                    education=raw_dict.get("education", []),
+                    certifications=raw_dict.get("certifications", []),
+                )
+                with st.spinner("Claude is reviewing your profile..."):
+                    enriched = _enrich_profile_with_claude(profile_obj, source="ai_enrichment")
+                enriched_dict = asdict(enriched)
+                st.session_state.profile_dict = enriched_dict
+                st.session_state.profile_text = profile_dict_to_text(enriched_dict)
+                n_improved = sum(
+                    1 for r in enriched.experience for b in r.bullets
+                    if b.evidence_source == "ai_enrichment"
+                )
+                st.success(f"Profile enriched. {n_improved} bullets updated by Claude.")
+                st.rerun()
+            except Exception as _e:
+                st.error(f"Enrichment failed: {_e}")
