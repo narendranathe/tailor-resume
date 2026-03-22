@@ -841,8 +841,145 @@ def _extract_pdf_text_stdlib(data: bytes) -> str:
 
 
 # ---------------------------------------------------------------------------
-# PDF parser  (pypdf preferred; stdlib fallback if not installed)
+# PDF text extraction — pdfminer.six (primary), pypdf (fallback), stdlib (last)
 # ---------------------------------------------------------------------------
+
+def _split_bullet_block(text: str) -> List[str]:
+    """
+    Split a multi-sentence paragraph block into individual bullet strings.
+
+    In 2-column LaTeX PDFs, pdfminer groups all bullet-point paragraphs into
+    one LTTextBox.  Within the box, lines that wrap within a bullet are joined
+    by pdfminer using \\n; a new bullet starts when the previous line ends with
+    a period and the next line begins with a capital letter.
+    """
+    sentences: List[str] = []
+    current: List[str] = []
+    for raw in text.split("\n"):
+        line = raw.strip()
+        if not line:
+            if current:
+                sentences.append(" ".join(current))
+                current = []
+            continue
+        # Sentence boundary: previous fragment ended with period, this starts uppercase
+        if current and current[-1].rstrip().endswith(".") and line[0].isupper():
+            sentences.append(" ".join(current))
+            current = [line]
+        else:
+            current.append(line)
+    if current:
+        sentences.append(" ".join(current))
+    return [s for s in sentences if s]
+
+
+def _extract_pdf_text_pdfminer(data: bytes) -> str:
+    """
+    Extract text from a PDF using pdfminer.six with column-aware reconstruction.
+
+    pdfminer reads the font's ToUnicode CMap, so glyphs map to correct Unicode
+    codepoints — solving the "Mi ssouri" / "Zomat o" / en-dash-as-'t' class of
+    bugs that plague LaTeX CMR-font PDFs processed by pypdf/stdlib.
+
+    Column detection:
+        For multi-column layouts, text boxes are split at the largest horizontal
+        gap in x0 values (must be > 15 pt).  The right column (Work Experience,
+        Publications) is output first; the left column (Summary, Education,
+        Skills, Projects) follows — matching the reading order expected by the
+        regex parser in _parse_plain_resume_text.
+
+    Within each column, text boxes are sorted top-to-bottom (y1 descending).
+    Multi-sentence paragraph blocks (where all bullet points land in one
+    LTTextBox) are split at sentence boundaries and each sentence is prefixed
+    with "• " so the downstream parser treats it as a bullet.
+
+    LAParam choices for resume layouts:
+        char_margin  = 1.5   — chars up to 1.5× their width apart are one word
+        line_margin  = 0.3   — lines within 0.3× their height apart are one block
+        word_margin  = 0.05  — min gap (× char width) to start a new word
+        boxes_flow   = 0.5   — balanced H+V flow; individual LTTextBoxes retain
+                               accurate x0 for column separation
+
+    Raises ImportError if pdfminer.six is not installed (caller falls back).
+    """
+    from pdfminer.high_level import extract_pages
+    from pdfminer.layout import LAParams, LTTextBox
+    import io
+
+    laparams = LAParams(
+        char_margin=1.5,
+        line_margin=0.3,
+        word_margin=0.05,
+        boxes_flow=0.5,
+    )
+
+    # Collect all text boxes across all pages: (y1, x0, text)
+    boxes: List[Tuple[float, float, str]] = []
+    for page_layout in extract_pages(io.BytesIO(data), laparams=laparams):
+        for element in page_layout:
+            if isinstance(element, LTTextBox):
+                text = element.get_text().strip()
+                if text:
+                    boxes.append((element.y1, element.x0, text))
+
+    if not boxes:
+        return ""
+
+    # Determine page width from the first page (used to constrain gap search).
+    # For US Letter the default is 612pt; A4 is ~595pt.
+    try:
+        first_page = next(extract_pages(io.BytesIO(data), laparams=laparams))
+        page_mid = first_page.width / 2.0
+    except Exception:
+        page_mid = 306.0  # 612 / 2 (US Letter default)
+
+    # Auto-detect column split: find the largest x0 gap that lies entirely in
+    # the left half of the page.  This avoids picking up the gap between role-
+    # title boxes (x0≈248) and date-label boxes (x0≈446) in sidebar layouts.
+    x0_vals = sorted(set(round(b[1]) for b in boxes))
+    split_x: Optional[float] = None
+    if len(x0_vals) >= 2:
+        max_gap, best_i = 0, 0
+        for i in range(len(x0_vals) - 1):
+            # Both endpoints must lie in the left half so we detect the sidebar
+            # boundary rather than a gap between sub-elements of the right column.
+            if x0_vals[i + 1] > page_mid:
+                break
+            gap = x0_vals[i + 1] - x0_vals[i]
+            if gap > max_gap:
+                max_gap, best_i = gap, i
+        if max_gap > 15:
+            split_x = (x0_vals[best_i] + x0_vals[best_i + 1]) / 2.0
+
+    def _box_lines(text: str) -> List[str]:
+        """Convert a text box to output lines, splitting multi-sentence blocks."""
+        sentences = _split_bullet_block(text)
+        if len(sentences) > 1:
+            return ["• " + s for s in sentences]
+        # Single line or short: output each line as-is
+        return [ln.strip() for ln in text.split("\n") if ln.strip()]
+
+    parts: List[str] = []
+
+    if split_x is not None:
+        left = [(y1, x0, t) for y1, x0, t in boxes if x0 < split_x]
+        right = [(y1, x0, t) for y1, x0, t in boxes if x0 >= split_x]
+        # Sort each column top-to-bottom; break ties by x0 (left to right)
+        left.sort(key=lambda b: (-b[0], b[1]))
+        right.sort(key=lambda b: (-b[0], b[1]))
+        for _, _, text in right:
+            parts.extend(_box_lines(text))
+        parts.append("")  # blank line between columns
+        for _, _, text in left:
+            parts.extend(_box_lines(text))
+    else:
+        # Single-column: sort all boxes top-to-bottom
+        boxes.sort(key=lambda b: (-b[0], b[1]))
+        for _, _, text in boxes:
+            parts.extend(_box_lines(text))
+
+    return "\n".join(parts)
+
 
 def _parse_with_claude(text: str, source: str) -> Profile:
     """
@@ -983,24 +1120,38 @@ def parse_pdf(file_bytes: bytes, source: str = "pdf_resume") -> Profile:
     """
     Extract text from a PDF file and parse it into a Profile.
 
-    Text extraction: pypdf (if installed) → stdlib extractor.
-    Parsing: Claude API (if ANTHROPIC_API_KEY set) → regex fallback.
+    Text extraction tier (first success wins):
+        1. pdfminer.six — reads ToUnicode CMap; best for LaTeX/CMR fonts
+        2. pypdf         — fast; good for Word-generated PDFs
+        3. stdlib        — no dependencies; last resort
 
-    PDF has no semantic structure — Claude as the parser is more reliable
-    than regex heuristics for any resume layout or encoding.
+    Parsing tier:
+        - If ANTHROPIC_API_KEY is set: Claude enrichment after regex parsing
+        - Otherwise: regex-based _parse_plain_resume_text (always available)
     """
-    text = ""
-    try:
-        from pypdf import PdfReader
-        import io
-        reader = PdfReader(io.BytesIO(file_bytes))
-        pages = [page.extract_text() or "" for page in reader.pages]
-        text = "\n".join(pages)
-    except ImportError:
-        text = _extract_pdf_text_stdlib(file_bytes)
+    import os
 
+    text = ""
+
+    # Tier 1: pdfminer.six (best Unicode fidelity for LaTeX CMR fonts)
+    try:
+        text = _extract_pdf_text_pdfminer(file_bytes)
+    except Exception:
+        pass
+
+    # Tier 2: pypdf
     if not text.strip():
-        # pypdf gave nothing — try our stdlib extractor as a second attempt
+        try:
+            from pypdf import PdfReader
+            import io
+            reader = PdfReader(io.BytesIO(file_bytes))
+            pages = [page.extract_text() or "" for page in reader.pages]
+            text = "\n".join(pages)
+        except ImportError:
+            pass
+
+    # Tier 3: stdlib extractor
+    if not text.strip():
         text = _extract_pdf_text_stdlib(file_bytes)
 
     if not text.strip():
@@ -1013,8 +1164,10 @@ def parse_pdf(file_bytes: bytes, source: str = "pdf_resume") -> Profile:
     if "\\resumeSubheading" in text or "\\resumeItem" in text:
         return parse_latex(text, source=source)
 
-    # Claude-based parsing is the primary path; regex is the fallback.
-    return _parse_with_claude(text, source=source)
+    # Claude is opt-in enrichment, not the primary parser
+    if os.environ.get("ANTHROPIC_API_KEY"):
+        return _parse_with_claude(text, source=source)
+    return _parse_plain_resume_text(text, source=source)
 
 
 # ---------------------------------------------------------------------------
@@ -1198,12 +1351,26 @@ def _parse_plain_resume_text(text: str, source: str = "resume") -> Profile:
 
             if date_n1 and _like_title(s):
                 # Title [+ company] on this line, date on next line
-                parts = re.split(r"\s{2,}|\s*[|·–]\s*", s)
-                title = parts[0].strip()
-                company = parts[1].strip() if len(parts) > 1 else ""
+                # Handle "Title: Company, Location" colon format (pdfminer / LaTeX PDFs)
+                _colon_m = re.match(r'^(.+?)\s*:\s*(.+)$', s)
+                if _colon_m:
+                    title = _colon_m.group(1).strip()
+                    _rest = _colon_m.group(2).strip()
+                    _comma_m = re.match(r'^([^,]+?)\s*,\s*(.+)$', _rest)
+                    if _comma_m:
+                        company = _comma_m.group(1).strip()
+                        location = _comma_m.group(2).strip()
+                    else:
+                        company = _rest
+                        location = ""
+                else:
+                    parts = re.split(r"\s{2,}|\s*[|·–]\s*", s)
+                    title = parts[0].strip()
+                    company = parts[1].strip() if len(parts) > 1 else ""
+                    location = ""
                 d = _DATE_PATTERN.search(next1)
                 start, end = _parse_dates(d.group(0)) if d else ("", "")
-                current_role = Role(title=title, company=company, start=start, end=end, location="")
+                current_role = Role(title=title, company=company, start=start, end=end, location=location)
                 profile.experience.append(current_role)
                 i += 1  # consume date line
                 continue
@@ -1236,7 +1403,18 @@ def _parse_plain_resume_text(text: str, source: str = "resume") -> Profile:
         elif section == "education":
             if not s.startswith(("•", "-")):
                 date_m = _DATE_PATTERN.search(s)
-                if date_m or any(kw in s.lower() for kw in ("university", "college", "institute", "school", "master", "bachelor", "phd", "b.s", "m.s", "b.e", "m.e")):
+                is_degree = any(kw in s.lower() for kw in ("master", "bachelor", "phd", "b.s", "m.s", "b.e", "m.e", "mba", "doctor", "associate"))
+                is_inst = any(kw in s.lower() for kw in ("university", "college", "institute", "school", "tech", "polytechnic"))
+                if date_m and not is_inst and profile.education:
+                    # Standalone date line — attach to the most recent edu entry
+                    profile.education[-1]["dates"] = s
+                elif is_degree and profile.education:
+                    # Degree line — attach to the most recent edu entry
+                    if not profile.education[-1]["degree"]:
+                        profile.education[-1]["degree"] = s
+                    else:
+                        profile.education.append({"institution": s, "degree": "", "dates": "", "location": ""})
+                elif is_inst or date_m:
                     profile.education.append({"institution": s, "degree": "", "dates": "", "location": ""})
 
         elif section == "skills":

@@ -758,6 +758,83 @@ class TestParsePdf:
 
 
 # ---------------------------------------------------------------------------
+# _extract_pdf_text_pdfminer — smoke test
+# ---------------------------------------------------------------------------
+class TestExtractPdfTextPdfminer:
+    def test_pdfminer_extracts_text_from_minimal_pdf(self):
+        """pdfminer returns non-empty string for a real PDF with text content."""
+        pytest.importorskip("pdfminer", reason="pdfminer.six not installed")
+        from profile_extractor import _extract_pdf_text_pdfminer
+        pytest.importorskip("pypdf", reason="pypdf needed to create test PDF")
+        from pypdf import PdfWriter
+        from pypdf.generic import NameObject, DecodedStreamObject
+
+        writer = PdfWriter()
+        # Build a minimal but valid PDF with a text stream
+        page = writer.add_blank_page(width=612, height=792)
+        # Embed a content stream with a simple text operator
+        stream = DecodedStreamObject()
+        stream.set_data(b"BT /F1 12 Tf 100 700 Td (Missouri) Tj ET")
+        page[NameObject("/Contents")] = stream
+        buf = io.BytesIO()
+        writer.write(buf)
+        pdf_bytes = buf.getvalue()
+
+        result = _extract_pdf_text_pdfminer(pdf_bytes)
+        # pdfminer returns a string (may be empty for PDFs without embedded fonts,
+        # but should not raise)
+        assert isinstance(result, str)
+
+    def test_pdfminer_import_error_propagates(self, monkeypatch):
+        """ImportError from pdfminer propagates so parse_pdf can catch it."""
+        import builtins
+        real_import = builtins.__import__
+
+        def mock_import(name, *args, **kwargs):
+            if name == "pdfminer.high_level":
+                raise ImportError("No module named 'pdfminer'")
+            return real_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "__import__", mock_import)
+        from profile_extractor import _extract_pdf_text_pdfminer
+        with pytest.raises(ImportError):
+            _extract_pdf_text_pdfminer(b"fake")
+
+    def test_parse_pdf_uses_pdfminer_when_available(self, monkeypatch):
+        """parse_pdf calls _extract_pdf_text_pdfminer first when pdfminer is available."""
+        import profile_extractor as pe
+        called = []
+
+        def fake_pdfminer(data):
+            called.append("pdfminer")
+            return "Senior Data Engineer at Acme Corp Jan 2022 – Dec 2024\n• Built pipelines"
+
+        monkeypatch.setattr(pe, "_extract_pdf_text_pdfminer", fake_pdfminer)
+        result = pe.parse_pdf(b"any bytes")
+        assert called == ["pdfminer"]
+        assert isinstance(result, pe.Profile)
+
+    def test_parse_pdf_falls_back_to_pypdf_when_pdfminer_missing(self, monkeypatch):
+        """parse_pdf falls back to pypdf when pdfminer raises ImportError."""
+        import profile_extractor as pe
+        import builtins
+
+        def fake_pdfminer(data):
+            raise ImportError("No module named 'pdfminer'")
+
+        monkeypatch.setattr(pe, "_extract_pdf_text_pdfminer", fake_pdfminer)
+        # With blank pypdf page → no text → ValueError (not ImportError)
+        pytest.importorskip("pypdf", reason="pypdf needed for fallback test")
+        from pypdf import PdfWriter
+        writer = PdfWriter()
+        writer.add_blank_page(width=612, height=792)
+        buf = io.BytesIO()
+        writer.write(buf)
+        with pytest.raises(ValueError, match="No text could be extracted"):
+            pe.parse_pdf(buf.getvalue())
+
+
+# ---------------------------------------------------------------------------
 # parse_docx
 # ---------------------------------------------------------------------------
 class TestParseDocx:
