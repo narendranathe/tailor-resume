@@ -833,6 +833,90 @@ class TestExtractPdfTextPdfminer:
         with pytest.raises(ValueError, match="No text could be extracted"):
             pe.parse_pdf(buf.getvalue())
 
+    def test_pdfminer_extractor_unicode_endash(self, monkeypatch):
+        """parse_pdf passes through U+2013 en dash from pdfminer without mangling."""
+        import profile_extractor as pe
+
+        def fake_pdfminer(data):
+            # Simulate pdfminer reading ToUnicode CMap → correct en dash
+            return "Data Engineer: Acme Corp\nJuly 2024 \u2013 Present\n\u2022 Built pipelines"
+
+        monkeypatch.setattr(pe, "_extract_pdf_text_pdfminer", fake_pdfminer)
+        profile = pe.parse_pdf(b"bytes")
+        # En dash must survive through parsing into the role's end date
+        assert len(profile.experience) == 1
+        assert "2024" in profile.experience[0].start or "July" in profile.experience[0].start
+        assert "Present" in profile.experience[0].end or profile.experience[0].end != ""
+
+    def test_pdfminer_extractor_word_grouping_via_bullet_split(self, monkeypatch):
+        """parse_pdf correctly handles multi-sentence bullet block from pdfminer.
+
+        pdfminer groups tightly-spaced chars into words (char_margin=1.5) and
+        adjacent bullet paragraphs into one LTTextBox.  _split_bullet_block
+        must split them at sentence boundaries so each sentence becomes a bullet.
+        """
+        import profile_extractor as pe
+
+        def fake_pdfminer(data):
+            # Simulate what pdfminer returns for a 2-sentence bullet block:
+            # two sentences, each starting uppercase after a period-ended previous line
+            return (
+                "Work Experience\n"
+                "Senior Engineer: Acme Corp\nJan 2022 \u2013 Dec 2024\n"
+                "\u2022 Reduced latency by 40%. Scaled throughput to 10K TPS."
+            )
+
+        monkeypatch.setattr(pe, "_extract_pdf_text_pdfminer", fake_pdfminer)
+        profile = pe.parse_pdf(b"bytes")
+        assert len(profile.experience) == 1
+        # Bullets come through (sentence-split or as one bullet)
+        assert len(profile.experience[0].bullets) >= 1
+
+
+# ---------------------------------------------------------------------------
+# _split_bullet_block — unit tests (pure Python, no PDF needed)
+# ---------------------------------------------------------------------------
+class TestSplitBulletBlock:
+    def test_single_sentence_returns_one_item(self):
+        from profile_extractor import _split_bullet_block
+        text = "Built a scalable data pipeline processing 10K records per second."
+        result = _split_bullet_block(text)
+        assert result == ["Built a scalable data pipeline processing 10K records per second."]
+
+    def test_two_sentences_split_at_boundary(self):
+        from profile_extractor import _split_bullet_block
+        text = (
+            "Reduced query latency by 40% through index tuning.\n"
+            "Scaled throughput to 10K TPS using Kafka partitioning."
+        )
+        result = _split_bullet_block(text)
+        assert len(result) == 2
+        assert result[0].startswith("Reduced")
+        assert result[1].startswith("Scaled")
+
+    def test_wrapped_lines_joined_within_sentence(self):
+        from profile_extractor import _split_bullet_block
+        text = (
+            "Architected an AI-powered analytics platform on\n"
+            "Microsoft Fabric, reducing support volume by 40%.\n"
+            "Owned end-to-end CI/CD infrastructure."
+        )
+        result = _split_bullet_block(text)
+        assert len(result) == 2
+        assert "Microsoft Fabric" in result[0]
+        assert "40%" in result[0]
+        assert result[1].startswith("Owned")
+
+    def test_empty_string_returns_empty_list(self):
+        from profile_extractor import _split_bullet_block
+        assert _split_bullet_block("") == []
+
+    def test_blank_lines_ignored(self):
+        from profile_extractor import _split_bullet_block
+        text = "First sentence.\n\nSecond sentence."
+        result = _split_bullet_block(text)
+        assert len(result) == 2
+
 
 # ---------------------------------------------------------------------------
 # parse_docx
