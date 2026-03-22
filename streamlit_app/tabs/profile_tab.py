@@ -147,7 +147,6 @@ def render():
             "(active voice, quantified). Facts are never changed — only phrasing improved."
         )
         if st.button("✨ Enhance with AI", help="Requires ANTHROPIC_API_KEY in .env"):
-            from dataclasses import asdict
             from resume_types import Profile, Role, Bullet, Project
 
             # Reconstruct Profile from session dict so we can pass it to enrichment

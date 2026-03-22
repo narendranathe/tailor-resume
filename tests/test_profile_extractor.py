@@ -817,7 +817,6 @@ class TestExtractPdfTextPdfminer:
     def test_parse_pdf_falls_back_to_pypdf_when_pdfminer_missing(self, monkeypatch):
         """parse_pdf falls back to pypdf when pdfminer raises ImportError."""
         import profile_extractor as pe
-        import builtins
 
         def fake_pdfminer(data):
             raise ImportError("No module named 'pdfminer'")

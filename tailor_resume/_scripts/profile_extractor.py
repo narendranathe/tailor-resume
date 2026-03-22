@@ -1250,11 +1250,9 @@ def parse_pdf(file_bytes: bytes, source: str = "pdf_resume") -> Profile:
         3. stdlib        — no dependencies; last resort
 
     Parsing tier:
-        - If ANTHROPIC_API_KEY is set: Claude enrichment after regex parsing
-        - Otherwise: regex-based _parse_plain_resume_text (always available)
+        - regex-based _parse_plain_resume_text (deterministic, 0 API calls)
+        - Call _enrich_profile_with_claude(profile) separately for LLM enrichment
     """
-    import os
-
     text = ""
 
     # Tier 1: pdfminer.six (best Unicode fidelity for LaTeX CMR fonts)
@@ -1380,6 +1378,21 @@ def _detect_section(line: str) -> Optional[str]:
     return None
 
 
+def _is_bullet_line(ln: str) -> bool:
+    """Return True if ln looks like a bullet-list item (any common prefix)."""
+    return ln.startswith(("•", "-", "–", "*", "·", "○", "▪")) or bool(re.match(r'^x\s+\S', ln))
+
+
+def _like_title_line(ln: str) -> bool:
+    """Return True if ln could be a role-title line (short, starts uppercase, no bullet)."""
+    return (
+        bool(ln) and ln[0:1].isupper()
+        and len(ln.split()) <= 8 and len(ln) <= 80
+        and not re.match(r'^x\s+\S', ln)
+        and not ln.startswith(("•", "-", "–", "*", "·", "○", "▪"))
+    )
+
+
 def _parse_plain_resume_text(text: str, source: str = "resume") -> Profile:
     """
     Parse plain text extracted from PDF or DOCX.
@@ -1448,12 +1461,10 @@ def _parse_plain_resume_text(text: str, source: str = "resume") -> Profile:
                     company = parts[1].strip() if len(parts) > 1 else ""
                 start, end = _parse_dates(dm.group(0))
                 # 2-column LaTeX layout: company on the next line (no date, no section, no bullet)
-                _is_bullet = lambda ln: (ln.startswith(("•", "-", "–", "*", "·", "○", "▪"))
-                                         or bool(re.match(r'^x\s+\S', ln)))
                 if (not company and next1
                         and not _detect_section(next1)
                         and not _DATE_PATTERN.search(next1)
-                        and not _is_bullet(next1)):
+                        and not _is_bullet_line(next1)):
                     loc_parts = re.split(r"\s{2,}", next1.strip())
                     company = loc_parts[0].strip()
                     location = loc_parts[1].strip() if len(loc_parts) > 1 else ""
@@ -1462,15 +1473,7 @@ def _parse_plain_resume_text(text: str, source: str = "resume") -> Profile:
                 profile.experience.append(current_role)
                 continue
 
-            # "looks like a title" guard: short, starts uppercase, no bullet prefix
-            _like_title = lambda ln: (
-                bool(ln) and ln[0:1].isupper()
-                and len(ln.split()) <= 8 and len(ln) <= 80
-                and not re.match(r'^x\s+\S', ln)
-                and not ln.startswith(("•", "-", "–", "*", "·", "○", "▪"))
-            )
-
-            if date_n1 and _like_title(s):
+            if date_n1 and _like_title_line(s):
                 # Title [+ company] on this line, date on next line
                 # Handle "Title: Company, Location" colon format (pdfminer / LaTeX PDFs)
                 _colon_m = re.match(r'^(.+?)\s*:\s*(.+)$', s)
@@ -1496,7 +1499,7 @@ def _parse_plain_resume_text(text: str, source: str = "resume") -> Profile:
                 i += 1  # consume date line
                 continue
 
-            if date_n2 and next1 and not _detect_section(next1) and _like_title(s) and _like_title(next1):
+            if date_n2 and next1 and not _detect_section(next1) and _like_title_line(s) and _like_title_line(next1):
                 # 3-line pattern: Title / Company / Date
                 title = s.strip()
                 company = next1.strip()
