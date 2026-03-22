@@ -422,8 +422,11 @@ def _pdf_read_string(block: str, pos: int) -> tuple:
 
 def _pdf_hex_to_text(hex_str: str) -> str:
     """
-    Decode a PDF hex string <XXXX> as UTF-16-BE (common in CIDFont/Word PDFs).
-    Falls back to latin-1 byte-by-byte if UTF-16-BE fails.
+    Decode a PDF hex string <XXXX> as UTF-16-BE (CIDFont/Word PDFs) or latin-1
+    (Type1/OT1 LaTeX PDFs).  Strategy: try UTF-16-BE and keep it only when the
+    result is ≥ 75 % ASCII printable (genuine Unicode text).  Otherwise fall
+    back to latin-1 byte-by-byte so that glyphs like <5458> → "TX" are
+    preserved.  The OT1 map is applied later in the piece-cleaning loop.
     """
     hex_str = re.sub(r"\s+", "", hex_str)
     if len(hex_str) % 2 != 0:
@@ -432,16 +435,19 @@ def _pdf_hex_to_text(hex_str: str) -> str:
         raw = bytes.fromhex(hex_str)
     except ValueError:
         return ""
-    # Try UTF-16-BE first (most common for Unicode PDFs)
-    if len(raw) % 2 == 0:
+    # Try UTF-16-BE first — only accept when result is mostly ASCII printable
+    # (heuristic: ≥ 75 % of chars in 0x20-0x7E).  A LaTeX Type1 font like
+    # <5458> → U+5458 '员' fails this check and correctly falls back to latin-1.
+    if len(raw) >= 2 and len(raw) % 2 == 0:
         try:
             text = raw.decode("utf-16-be", errors="strict")
-            # Filter to printable ASCII range for resume text
-            return "".join(c for c in text if 32 <= ord(c) <= 126)
+            ascii_printable = sum(1 for c in text if 32 <= ord(c) <= 126)
+            if ascii_printable >= len(text) * 0.75:
+                return text
         except Exception:
             pass
-    # Fallback: latin-1
-    return "".join(chr(b) for b in raw if 32 <= b <= 126)
+    # Fallback: latin-1 byte-by-byte (Type1 / OT1 encoding)
+    return "".join(chr(b) for b in raw if chr(b).isprintable())
 
 
 # LaTeX OT1 font encoding — byte values that don't map to their ASCII equivalents.
@@ -478,9 +484,11 @@ def _extract_pdf_text_stdlib(data: bytes) -> str:
 
     Handles:
     - FlateDecode (zlib) compressed streams
-    - Literal strings (text) Tj / [(text) kern] TJ — joins kerning pieces
-    - Hex strings <XXXX> Tj / [<XXXX>] TJ — UTF-16-BE decode (Word/GDocs PDFs)
-    - T*, Td/TD, ' operators for line breaks
+    - Absolute positioning via Tm matrix (1 0 0 1 x y Tm) — correctly
+      reconstructs 2-column layouts by grouping pieces at the same y
+    - Literal strings Tj / [(text) kern] TJ with OT1 ligature mapping
+    - Hex strings <XXXX> Tj / TJ — UTF-16-BE decode (Word/GDocs PDFs)
+    - T*, Td/TD, ' operators for relative line movement
     """
     import zlib
 
@@ -495,7 +503,40 @@ def _extract_pdf_text_stdlib(data: bytes) -> str:
     if not raw_streams:
         raw_streams = [data]
 
-    all_lines: List[str] = []
+    # Collect (x, y, text) pieces; we'll group by y to reconstruct visual lines
+    pieces: List[Tuple[float, float, str]] = []
+
+    def _parse_tj_array(arr: str) -> str:
+        """Extract and join text from the content of a TJ array [ ... ]."""
+        parts: List[str] = []
+        ap = 0
+        an = len(arr)
+        while ap < an:
+            ac = arr[ap]
+            if ac == "(":
+                s, ap = _pdf_read_string(arr, ap)
+                parts.append(s)
+            elif ac == "<" and (ap + 1 >= an or arr[ap + 1] != "<"):
+                aend = arr.find(">", ap + 1)
+                if aend != -1:
+                    parts.append(_pdf_hex_to_text(arr[ap + 1:aend]))
+                    ap = aend + 1
+                else:
+                    ap += 1
+            else:
+                # Kerning number — large negative value = word space
+                num_m = re.match(r"-?\d+(?:\.\d*)?", arr[ap:])
+                if num_m:
+                    try:
+                        kern = float(num_m.group())
+                        if kern < -150 and parts:
+                            parts.append(" ")
+                    except ValueError:
+                        pass
+                    ap += num_m.end()
+                else:
+                    ap += 1
+        return "".join(parts)
 
     for raw in raw_streams:
         try:
@@ -506,9 +547,21 @@ def _extract_pdf_text_stdlib(data: bytes) -> str:
         for block_m in re.finditer(r"BT(.*?)ET", txt, re.DOTALL):
             block = block_m.group(1)
             n = len(block)
-            current: List[str] = []
-            block_lines: List[str] = []
             pos = 0
+
+            # Text state — absolute position from Tm, relative offsets from Td
+            tm_x = 0.0
+            tm_y = 0.0
+            td_x = 0.0
+            td_y = 0.0
+            leading = 12.0  # default assumed leading for T*
+
+            current: List[str] = []
+
+            def emit(txt_pieces: List[str], cx: float, cy: float) -> None:
+                joined = "".join(txt_pieces)
+                if joined.strip():
+                    pieces.append((cx, cy, joined))
 
             while pos < n:
                 c = block[pos]
@@ -518,10 +571,59 @@ def _extract_pdf_text_stdlib(data: bytes) -> str:
                     pos += 1
                     continue
 
+                # Tm — absolute text matrix: a b c d x y Tm
+                m2 = re.match(
+                    r"(-?\d+(?:\.\d*)?)\s+(-?\d+(?:\.\d*)?)\s+"
+                    r"(-?\d+(?:\.\d*)?)\s+(-?\d+(?:\.\d*)?)\s+"
+                    r"(-?\d+(?:\.\d*)?)\s+(-?\d+(?:\.\d*)?)\s+Tm",
+                    block[pos:]
+                )
+                if m2:
+                    if current:
+                        emit(current, tm_x + td_x, tm_y + td_y)
+                        current = []
+                    tm_x = float(m2.group(5))
+                    tm_y = float(m2.group(6))
+                    td_x = 0.0
+                    td_y = 0.0
+                    pos += m2.end()
+                    continue
+
+                # TL — set leading (for T*)
+                m2 = re.match(r"(-?\d+(?:\.\d*)?)\s+TL", block[pos:])
+                if m2:
+                    try:
+                        leading = abs(float(m2.group(1)))
+                    except ValueError:
+                        pass
+                    pos += m2.end()
+                    continue
+
+                # Td or TD — relative move
+                m2 = re.match(r"(-?\d+(?:\.\d*)?)\s+(-?\d+(?:\.\d*)?)\s+T[dD]", block[pos:])
+                if m2:
+                    dx = float(m2.group(1))
+                    dy = float(m2.group(2))
+                    if current and abs(dy) > 0.5:
+                        emit(current, tm_x + td_x, tm_y + td_y)
+                        current = []
+                    td_x += dx
+                    td_y += dy
+                    pos += m2.end()
+                    continue
+
+                # T* — move to next line (y -= leading)
+                if block[pos:pos+2] == "T*":
+                    if current:
+                        emit(current, tm_x + td_x, tm_y + td_y)
+                        current = []
+                    td_y -= leading
+                    pos += 2
+                    continue
+
                 # Literal string: (text)
                 if c == "(":
                     s, pos = _pdf_read_string(block, pos)
-                    # Peek at next non-whitespace token
                     j = pos
                     while j < n and block[j] in " \t\r\n":
                         j += 1
@@ -531,11 +633,12 @@ def _extract_pdf_text_stdlib(data: bytes) -> str:
                             pos = j + 2
                         elif block[j] == "'":
                             if current:
-                                block_lines.append("".join(current))
+                                emit(current, tm_x + td_x, tm_y + td_y)
+                            td_y -= leading
                             current = [s] if s else []
                             pos = j + 1
                         else:
-                            pos = j  # string not followed by Tj/'; skip
+                            pos = j
                     continue
 
                 # Hex string: <hex>
@@ -546,7 +649,6 @@ def _extract_pdf_text_stdlib(data: bytes) -> str:
                         continue
                     hex_content = block[pos + 1:end]
                     pos = end + 1
-                    # Peek at next token
                     j = pos
                     while j < n and block[j] in " \t\r\n":
                         j += 1
@@ -559,7 +661,6 @@ def _extract_pdf_text_stdlib(data: bytes) -> str:
 
                 # TJ array: [ ... ] TJ
                 if c == "[":
-                    # Scan for matching ] without regex
                     depth = 1
                     j = pos + 1
                     while j < n and depth > 0:
@@ -570,7 +671,6 @@ def _extract_pdf_text_stdlib(data: bytes) -> str:
                             depth -= 1
                             j += 1
                         elif block[j] == "(":
-                            # skip string content
                             _, j = _pdf_read_string(block, j)
                         elif block[j] == "<" and (j + 1 >= n or block[j + 1] != "<"):
                             end = block.find(">", j + 1)
@@ -580,81 +680,35 @@ def _extract_pdf_text_stdlib(data: bytes) -> str:
                         else:
                             j += 1
                     arr_end = j
-                    # Check for TJ
                     k = arr_end
                     while k < n and block[k] in " \t\r\n":
                         k += 1
                     if k < n and block[k:k+2] == "TJ" and (k + 2 >= n or not block[k+2].isalpha()):
-                        # Extract all literal and hex strings from the array
-                        arr = block[pos + 1:arr_end - 1]
-                        parts: List[str] = []
-                        ap = 0
-                        an = len(arr)
-                        while ap < an:
-                            ac = arr[ap]
-                            if ac == "(":
-                                s, ap = _pdf_read_string(arr, ap)
-                                parts.append(s)
-                            elif ac == "<" and (ap + 1 >= an or arr[ap + 1] != "<"):
-                                aend = arr.find(">", ap + 1)
-                                if aend != -1:
-                                    parts.append(_pdf_hex_to_text(arr[ap + 1:aend]))
-                                    ap = aend + 1
-                                else:
-                                    ap += 1
-                            else:
-                                # Kerning number — large negative value = word space
-                                num_m = re.match(r"-?\d+(?:\.\d*)?", arr[ap:])
-                                if num_m:
-                                    try:
-                                        kern = float(num_m.group())
-                                        if kern < -150 and parts:
-                                            parts.append(" ")
-                                    except ValueError:
-                                        pass
-                                    ap += num_m.end()
-                                else:
-                                    ap += 1
-                        if parts:
-                            current.append("".join(parts))
+                        arr_text = _parse_tj_array(block[pos + 1:arr_end - 1])
+                        if arr_text:
+                            current.append(arr_text)
                         pos = k + 2
                     else:
                         pos = arr_end
                     continue
 
-                # T* — explicit newline
-                if block[pos:pos+2] == "T*":
-                    if current:
-                        block_lines.append("".join(current))
-                        current = []
-                    pos += 2
-                    continue
-
-                # Td or TD — position move; significant y = new line
-                m2 = re.match(r"(-?\d+(?:\.\d*)?)\s+(-?\d+(?:\.\d*)?)\s+T[dD]", block[pos:])
-                if m2:
-                    try:
-                        y = float(m2.group(2))
-                    except ValueError:
-                        y = 0.0
-                    if abs(y) > 0.5 and current:
-                        block_lines.append("".join(current))
-                        current = []
-                    pos += m2.end()
-                    continue
-
-                # Skip any other token (numbers, font ops, etc.)
-                m2 = re.match(r"\S+", block[pos:])
+                # Skip any other token (numbers, font ops, gs, etc.)
+                # Stop before PDF delimiters so that a construct like
+                # "-0.05 Tc[(TX)] TJ" does not get consumed as one giant token,
+                # which would prevent the '[' from being seen as a TJ array.
+                m2 = re.match(r"[^\s\[(<]+", block[pos:])
                 if m2:
                     pos += m2.end()
                 else:
                     pos += 1
 
             if current:
-                block_lines.append("".join(current))
-            all_lines.extend(block_lines)
+                emit(current, tm_x + td_x, tm_y + td_y)
 
-    # Decode PDF escape sequences and filter garbage lines
+    # ----------------------------------------------------------------
+    # Reconstruct visual lines: group pieces by y (±3pt tolerance),
+    # sort each group left→right by x, join with space.
+    # ----------------------------------------------------------------
     def _unescape(s: str) -> str:
         s = (s.replace("\\n", " ").replace("\\r", " ")
               .replace("\\t", " ").replace("\\(", "(")
@@ -662,11 +716,95 @@ def _extract_pdf_text_stdlib(data: bytes) -> str:
         s = re.sub(r"\\([0-7]{1,3})", lambda m: chr(int(m.group(1), 8) % 128), s)
         return s
 
+    # Clean each piece
+    cleaned_pieces: List[Tuple[float, float, str]] = []
+    for px, py, ptxt in pieces:
+        ptxt = _unescape(ptxt)
+        ptxt = _apply_ot1(ptxt)
+        ptxt_p = "".join(c for c in ptxt if c.isprintable())
+        if not ptxt_p:
+            continue
+        # Whitespace-only pieces become a single " " sentinel so that the
+        # x-gap joining in _group_to_lines can see the visual space that was
+        # rendered by the PDF without carrying stray blank content.
+        stored = " " if not ptxt_p.strip() else ptxt_p
+        cleaned_pieces.append((px, py, stored))
+
+    if not cleaned_pieces:
+        return ""
+
+    Y_TOL = 3.0
+
+    # Rough character width estimate (pts) for ~10pt fonts — used to decide
+    # whether consecutive pieces on the same line need a word-space between
+    # them.  If the x-gap between piece N and piece N+1 is ≤ len(piece_N) *
+    # CHAR_W, they are visually adjacent (same word); no extra space is added.
+    # This fixes split words ("Mi ssouri" → "Missouri") and split years
+    # ("202 4" → "2024") that arise when every glyph run is its own BT block.
+    CHAR_W = 4.0  # pt — conservative average for CMR 10 / Computer Modern
+
+    def _group_to_lines(ps: List[Tuple[float, float, str]]) -> List[str]:
+        """Group pieces by y (±Y_TOL), sort each group by x, smart-join."""
+        if not ps:
+            return []
+        ps_sorted = sorted(ps, key=lambda p: (-p[1], p[0]))
+        result: List[str] = []
+        grp: List[Tuple[float, float, str]] = [ps_sorted[0]]
+        for px, py, ptxt in ps_sorted[1:]:
+            if abs(py - grp[0][1]) <= Y_TOL:
+                grp.append((px, py, ptxt))
+            else:
+                grp.sort(key=lambda p: p[0])
+                # Smart join: omit inter-piece space when pieces are adjacent
+                parts = [grp[0][2]]
+                for k in range(1, len(grp)):
+                    prev_x, _, prev_txt = grp[k - 1]
+                    cur_x, _, cur_txt = grp[k]
+                    gap = cur_x - prev_x
+                    adjacent = gap <= len(prev_txt) * CHAR_W * 1.1
+                    parts.append(cur_txt if adjacent else " " + cur_txt)
+                result.append("".join(parts))
+                grp = [(px, py, ptxt)]
+        if grp:
+            grp.sort(key=lambda p: p[0])
+            parts = [grp[0][2]]
+            for k in range(1, len(grp)):
+                prev_x, _, prev_txt = grp[k - 1]
+                cur_x, _, cur_txt = grp[k]
+                gap = cur_x - prev_x
+                adjacent = gap <= len(prev_txt) * CHAR_W * 1.1
+                parts.append(cur_txt if adjacent else " " + cur_txt)
+            result.append("".join(parts))
+        return result
+
+    # Detect two-column layout by finding the largest gap in the global x
+    # distribution.  A sidebar-style 2-column LaTeX resume has all left-column
+    # pieces below some x threshold and all right-column pieces above it,
+    # producing a clear "desert" in the x histogram (even if only 20-25pt wide).
+    col_split_x: Optional[float] = None
+    if len(cleaned_pieces) > 4:
+        all_xs_g = sorted(p[0] for p in cleaned_pieces)
+        max_gap_g = 0.0
+        for i in range(1, len(all_xs_g)):
+            gap = all_xs_g[i] - all_xs_g[i - 1]
+            if gap > max_gap_g:
+                max_gap_g = gap
+                col_split_x = (all_xs_g[i] + all_xs_g[i - 1]) / 2.0
+        if max_gap_g < 18.0:   # no reliable column separator found
+            col_split_x = None
+
+    if col_split_x is not None:
+        # Two-column layout: process each column independently top-to-bottom,
+        # then concatenate (left column first, right column second).
+        left_pieces = [(x, y, t) for x, y, t in cleaned_pieces if x < col_split_x]
+        right_pieces = [(x, y, t) for x, y, t in cleaned_pieces if x >= col_split_x]
+        lines_out = _group_to_lines(left_pieces) + _group_to_lines(right_pieces)
+    else:
+        lines_out = _group_to_lines(cleaned_pieces)
+
+    # Filter garbage lines
     cleaned: List[str] = []
-    for line in all_lines:
-        line = _unescape(line)
-        line = _apply_ot1(line)
-        line = "".join(c for c in line if c.isprintable()).strip()
+    for line in lines_out:
         if len(line) < 2:
             continue
         alpha = sum(c.isalpha() for c in line)
@@ -674,17 +812,182 @@ def _extract_pdf_text_stdlib(data: bytes) -> str:
             continue
         cleaned.append(line)
 
-    return "\n".join(cleaned)
+    text_out = "\n".join(cleaned)
+
+    # Post-process: fix artefacts from per-glyph BT blocks in LaTeX PDFs.
+    # (1) Lone "t" between a 4-digit year and a month/Present = en dash glyph
+    #     that survived as chr(0x74) after CID font decode.
+    _MONTHS_RE = (r"Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|"
+                  r"Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|"
+                  r"Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?|Present|Current|Now")
+    text_out = re.sub(
+        r"(\d{4})\s+t\s+(" + _MONTHS_RE + r")",
+        lambda m: m.group(1) + " \u2013 " + m.group(2),
+        text_out,
+        flags=re.IGNORECASE,
+    )
+
+    # (2) Merge split digit sequences that arise when each glyph is its own BT
+    #     block: "202 4" → "2024", "20 18" → "2018".
+    text_out = re.sub(r'(?<!\d)(\d{2,3}) (\d)(?!\d)', r'\1\2', text_out)
+    text_out = re.sub(r'(?<!\d)(\d{2}) (\d{2})(?!\d)', r'\1\2', text_out)
+
+    # (3) Collapse multiple consecutive spaces to one (space-sentinel artefact).
+    text_out = re.sub(r'[ \t]+', ' ', text_out)
+    # Re-strip each line after collapsing spaces.
+    text_out = "\n".join(line.strip() for line in text_out.splitlines())
+
+    return text_out
 
 
 # ---------------------------------------------------------------------------
 # PDF parser  (pypdf preferred; stdlib fallback if not installed)
 # ---------------------------------------------------------------------------
 
+def _parse_with_claude(text: str, source: str) -> Profile:
+    """
+    Use Claude to parse raw extracted resume text into a structured Profile.
+
+    This is the primary parsing strategy for PDF input: PDF is a rendering
+    format with no semantic structure, so regex heuristics are inherently
+    fragile.  Claude reads the raw text and returns JSON, handling word
+    splits, encoding artefacts, ambiguous separators, and multi-column
+    layouts correctly in a single pass.
+
+    Falls back to _parse_plain_resume_text on any API/parsing error.
+    """
+    import json
+    import os
+
+    try:
+        from anthropic import Anthropic
+    except ImportError:
+        return _parse_plain_resume_text(text, source=source)
+
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key:
+        return _parse_plain_resume_text(text, source=source)
+
+    prompt = f"""You are a resume parser. The text below was extracted from a PDF resume.
+PDF text extraction is lossy: words may be split ("Mi ssouri" = "Missouri",
+"Zomat o" = "Zomato"), characters may be garbled, and layout cues are lost.
+Use context to reconstruct the correct meaning.
+
+Return ONLY a JSON object — no markdown, no explanation — with this exact schema:
+{{
+  "experience": [
+    {{
+      "title": "Job title",
+      "company": "Company name (reconstruct split words)",
+      "start": "Month YYYY or YYYY",
+      "end": "Month YYYY or YYYY or Present",
+      "location": "City, State",
+      "bullets": ["bullet text 1", "bullet text 2"]
+    }}
+  ],
+  "projects": [
+    {{
+      "name": "Project name",
+      "tech": ["tech1", "tech2"],
+      "bullets": ["bullet text 1"]
+    }}
+  ],
+  "skills": ["skill1", "skill2"],
+  "education": [
+    {{
+      "institution": "University name",
+      "degree": "Degree and field",
+      "dates": "YYYY – YYYY",
+      "location": ""
+    }}
+  ],
+  "certifications": ["cert1"]
+}}
+
+RESUME TEXT:
+{text}"""
+
+    try:
+        client = Anthropic(api_key=api_key)
+        response = client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=4096,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        raw = response.content[0].text.strip()
+        # Strip markdown code fences if present
+        if raw.startswith("```"):
+            raw = re.sub(r"^```[a-z]*\n?", "", raw)
+            raw = re.sub(r"\n?```$", "", raw)
+        data = json.loads(raw)
+    except Exception:
+        return _parse_plain_resume_text(text, source=source)
+
+    profile = Profile()
+
+    for r in data.get("experience", []):
+        bullets = [
+            Bullet(
+                text=b,
+                metrics=extract_metrics(b),
+                tools=extract_tools(b),
+                evidence_source=source,
+                confidence=score_confidence(b),
+            )
+            for b in r.get("bullets", [])
+            if isinstance(b, str) and b.strip()
+        ]
+        profile.experience.append(Role(
+            title=r.get("title", ""),
+            company=r.get("company", ""),
+            start=r.get("start", ""),
+            end=r.get("end", ""),
+            location=r.get("location", ""),
+            bullets=bullets,
+        ))
+
+    for p in data.get("projects", []):
+        bullets = [
+            Bullet(
+                text=b,
+                metrics=extract_metrics(b),
+                tools=extract_tools(b),
+                evidence_source=source,
+                confidence=score_confidence(b),
+            )
+            for b in p.get("bullets", [])
+            if isinstance(b, str) and b.strip()
+        ]
+        profile.projects.append(Project(
+            name=p.get("name", ""),
+            tech=p.get("tech", []),
+            bullets=bullets,
+        ))
+
+    profile.skills = _dedupe([s for s in data.get("skills", []) if isinstance(s, str)])
+    profile.education = [
+        {
+            "institution": e.get("institution", ""),
+            "degree": e.get("degree", ""),
+            "dates": e.get("dates", ""),
+            "location": e.get("location", ""),
+        }
+        for e in data.get("education", [])
+    ]
+    profile.certifications = [c for c in data.get("certifications", []) if isinstance(c, str)]
+
+    return profile
+
+
 def parse_pdf(file_bytes: bytes, source: str = "pdf_resume") -> Profile:
     """
-    Extract text from a PDF file and parse it.
-    Uses pypdf if available, falls back to stdlib extraction otherwise.
+    Extract text from a PDF file and parse it into a Profile.
+
+    Text extraction: pypdf (if installed) → stdlib extractor.
+    Parsing: Claude API (if ANTHROPIC_API_KEY set) → regex fallback.
+
+    PDF has no semantic structure — Claude as the parser is more reliable
+    than regex heuristics for any resume layout or encoding.
     """
     text = ""
     try:
@@ -694,7 +997,10 @@ def parse_pdf(file_bytes: bytes, source: str = "pdf_resume") -> Profile:
         pages = [page.extract_text() or "" for page in reader.pages]
         text = "\n".join(pages)
     except ImportError:
-        # No pypdf — use stdlib extractor
+        text = _extract_pdf_text_stdlib(file_bytes)
+
+    if not text.strip():
+        # pypdf gave nothing — try our stdlib extractor as a second attempt
         text = _extract_pdf_text_stdlib(file_bytes)
 
     if not text.strip():
@@ -707,7 +1013,8 @@ def parse_pdf(file_bytes: bytes, source: str = "pdf_resume") -> Profile:
     if "\\resumeSubheading" in text or "\\resumeItem" in text:
         return parse_latex(text, source=source)
 
-    return _parse_plain_resume_text(text, source=source)
+    # Claude-based parsing is the primary path; regex is the fallback.
+    return _parse_with_claude(text, source=source)
 
 
 # ---------------------------------------------------------------------------
@@ -763,8 +1070,12 @@ def parse_docx(file_bytes: bytes, source: str = "docx_resume") -> Profile:
 
 _DATE_PATTERN = re.compile(
     r"(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|"
-    r"Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|"
-    r"Dec(?:ember)?|Q[1-4])[\s,]*\d{2,4}|"
+    r"Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|"
+    r"Dec(?:ember)?|Q[1-4])[\s,]*\d{2,4}"
+    r"(?:\s*[–\-]\s*(?:\d{2,4}|[Pp]resent|[Cc]urrent|[Nn]ow|"
+    r"(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|"
+    r"Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|"
+    r"Dec(?:ember)?)[\s,]*\d{2,4}))?|"
     r"\d{4}\s*[-–]\s*(?:\d{4}|[Pp]resent|[Cc]urrent|[Nn]ow)",
     re.IGNORECASE,
 )
@@ -803,6 +1114,17 @@ def _parse_plain_resume_text(text: str, source: str = "resume") -> Profile:
     and 3-line (Title / Company / Date) role headers via 2-step lookahead.
     """
     profile = Profile()
+    # Fix OT1 en-dash encoded as ASCII 't' (LaTeX CMR font glyph 0x74).
+    # Applied here as a guaranteed fallback even if _extract_pdf_text_stdlib
+    # couldn't apply it (e.g. when "2024 t Present" was split across lines).
+    _months_alt = (r"Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|"
+                   r"Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|"
+                   r"Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?|Present|Current|Now")
+    text = re.sub(r"(\d{4})\s+t\s+(" + _months_alt + r")",
+                  lambda m: m.group(1) + " \u2013 " + m.group(2),
+                  text, flags=re.IGNORECASE)
+    # Also merge split year digits that the extractor may have left: "202 4"→"2024"
+    text = re.sub(r'(?<!\d)(\d{2,3}) (\d)(?!\d)', r'\1\2', text)
     lines = [line.strip() for line in text.splitlines()]
     n = len(lines)
     section = "experience"
@@ -834,16 +1156,30 @@ def _parse_plain_resume_text(text: str, source: str = "resume") -> Profile:
                 # "Title  Company  Jan 2022 – Present" all on one line
                 dm = date_here
                 pre = s[:dm.start()].strip(" |·–—-")
-                parts = re.split(r"\s{2,}|\s*[|·–]\s*", pre)
-                title = parts[0].strip() if parts else pre
-                company = parts[1].strip() if len(parts) > 1 else ""
-                start, end = _parse_dates(dm.group(0))
                 location = ""
+                # Try "Title : Company, Location" (LaTeX resume colon style) first
+                colon_m = re.match(r'^(.+?)\s*:\s*(.+)$', pre)
+                if colon_m:
+                    title = colon_m.group(1).strip()
+                    rest = colon_m.group(2).strip()
+                    comma_m = re.match(r'^([^,]+?)\s*,\s*(.+)$', rest)
+                    if comma_m:
+                        company = comma_m.group(1).strip()
+                        location = comma_m.group(2).strip()
+                    else:
+                        company = rest
+                else:
+                    parts = re.split(r"\s{2,}|\s*[|·–]\s*", pre)
+                    title = parts[0].strip() if parts else pre
+                    company = parts[1].strip() if len(parts) > 1 else ""
+                start, end = _parse_dates(dm.group(0))
                 # 2-column LaTeX layout: company on the next line (no date, no section, no bullet)
+                _is_bullet = lambda ln: (ln.startswith(("•", "-", "–", "*", "·", "○", "▪"))
+                                         or bool(re.match(r'^x\s+\S', ln)))
                 if (not company and next1
                         and not _detect_section(next1)
                         and not _DATE_PATTERN.search(next1)
-                        and not next1.startswith(("•", "-", "–", "*", "·", "○", "▪"))):
+                        and not _is_bullet(next1)):
                     loc_parts = re.split(r"\s{2,}", next1.strip())
                     company = loc_parts[0].strip()
                     location = loc_parts[1].strip() if len(loc_parts) > 1 else ""
@@ -852,7 +1188,15 @@ def _parse_plain_resume_text(text: str, source: str = "resume") -> Profile:
                 profile.experience.append(current_role)
                 continue
 
-            if date_n1:
+            # "looks like a title" guard: short, starts uppercase, no bullet prefix
+            _like_title = lambda ln: (
+                bool(ln) and ln[0:1].isupper()
+                and len(ln.split()) <= 8 and len(ln) <= 80
+                and not re.match(r'^x\s+\S', ln)
+                and not ln.startswith(("•", "-", "–", "*", "·", "○", "▪"))
+            )
+
+            if date_n1 and _like_title(s):
                 # Title [+ company] on this line, date on next line
                 parts = re.split(r"\s{2,}|\s*[|·–]\s*", s)
                 title = parts[0].strip()
@@ -864,7 +1208,7 @@ def _parse_plain_resume_text(text: str, source: str = "resume") -> Profile:
                 i += 1  # consume date line
                 continue
 
-            if date_n2 and next1 and not _detect_section(next1):
+            if date_n2 and next1 and not _detect_section(next1) and _like_title(s) and _like_title(next1):
                 # 3-line pattern: Title / Company / Date
                 title = s.strip()
                 company = next1.strip()
@@ -875,9 +1219,10 @@ def _parse_plain_resume_text(text: str, source: str = "resume") -> Profile:
                 i += 2  # consume company and date lines
                 continue
 
-            # Bullet lines — require explicit bullet prefix
-            if current_role and s.startswith(("•", "-", "–", "*", "·", "○", "▪")):
-                txt = s.lstrip("•-–*·○▪ ").strip()
+            # Bullet lines — standard prefixes OR "x " (LaTeX font glyph decoded as x)
+            if current_role and (s.startswith(("•", "-", "–", "*", "·", "○", "▪"))
+                                  or re.match(r'^x\s+\S', s)):
+                txt = s.lstrip("•-–*·○▪x ").strip()
                 if len(txt) > 15:
                     bullet = Bullet(
                         text=txt,
@@ -908,6 +1253,22 @@ def _parse_plain_resume_text(text: str, source: str = "resume") -> Profile:
                 else:
                     if sk and len(sk) > 1:
                         profile.skills.append(sk)
+
+        elif section == "projects":
+            # Project name lines start with a bullet prefix or look title-like
+            is_proj_header = (s.startswith(("•", "-", "–", "*", "·", "○", "▪"))
+                              or re.match(r'^x\s+\S', s))
+            clean_s = s.lstrip("•-–*·○▪x ").strip()
+            if is_proj_header and len(clean_s) > 3:
+                proj = Project(name=clean_s, tech=extract_tools(clean_s))
+                profile.projects.append(proj)
+            elif profile.projects and clean_s and len(clean_s) > 10:
+                # Description / bullet lines for the current project
+                last = profile.projects[-1]
+                bul = Bullet(text=clean_s, metrics=extract_metrics(clean_s),
+                             tools=extract_tools(clean_s), evidence_source=source,
+                             confidence=score_confidence(clean_s))
+                last.bullets.append(bul)
 
         elif section == "certifications":
             clean_s = s.strip(" -•*·")

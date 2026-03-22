@@ -2,6 +2,18 @@ import sys
 import os
 
 # ---------------------------------------------------------------------------
+# Load .env from repo root (ANTHROPIC_API_KEY for Claude-based PDF parsing)
+# ---------------------------------------------------------------------------
+_ROOT_ENV = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env")
+if os.path.exists(_ROOT_ENV):
+    with open(_ROOT_ENV) as _f:
+        for _line in _f:
+            _line = _line.strip()
+            if _line and not _line.startswith("#") and "=" in _line:
+                _k, _v = _line.split("=", 1)
+                os.environ.setdefault(_k.strip(), _v.strip().strip("\"'"))
+
+# ---------------------------------------------------------------------------
 # Path setup — must happen before any local imports
 # Tries .claude/skills path first (local dev), falls back to tailor_resume/_scripts
 # (installed package path), so the app works in both environments.

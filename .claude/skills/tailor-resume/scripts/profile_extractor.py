@@ -844,10 +844,150 @@ def _extract_pdf_text_stdlib(data: bytes) -> str:
 # PDF parser  (pypdf preferred; stdlib fallback if not installed)
 # ---------------------------------------------------------------------------
 
+def _parse_with_claude(text: str, source: str) -> Profile:
+    """
+    Use Claude to parse raw extracted resume text into a structured Profile.
+
+    This is the primary parsing strategy for PDF input: PDF is a rendering
+    format with no semantic structure, so regex heuristics are inherently
+    fragile.  Claude reads the raw text and returns JSON, handling word
+    splits, encoding artefacts, ambiguous separators, and multi-column
+    layouts correctly in a single pass.
+
+    Falls back to _parse_plain_resume_text on any API/parsing error.
+    """
+    import json
+    import os
+
+    try:
+        from anthropic import Anthropic
+    except ImportError:
+        return _parse_plain_resume_text(text, source=source)
+
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key:
+        return _parse_plain_resume_text(text, source=source)
+
+    prompt = f"""You are a resume parser. The text below was extracted from a PDF resume.
+PDF text extraction is lossy: words may be split ("Mi ssouri" = "Missouri",
+"Zomat o" = "Zomato"), characters may be garbled, and layout cues are lost.
+Use context to reconstruct the correct meaning.
+
+Return ONLY a JSON object — no markdown, no explanation — with this exact schema:
+{{
+  "experience": [
+    {{
+      "title": "Job title",
+      "company": "Company name (reconstruct split words)",
+      "start": "Month YYYY or YYYY",
+      "end": "Month YYYY or YYYY or Present",
+      "location": "City, State",
+      "bullets": ["bullet text 1", "bullet text 2"]
+    }}
+  ],
+  "projects": [
+    {{
+      "name": "Project name",
+      "tech": ["tech1", "tech2"],
+      "bullets": ["bullet text 1"]
+    }}
+  ],
+  "skills": ["skill1", "skill2"],
+  "education": [
+    {{
+      "institution": "University name",
+      "degree": "Degree and field",
+      "dates": "YYYY – YYYY",
+      "location": ""
+    }}
+  ],
+  "certifications": ["cert1"]
+}}
+
+RESUME TEXT:
+{text}"""
+
+    try:
+        client = Anthropic(api_key=api_key)
+        response = client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=4096,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        raw = response.content[0].text.strip()
+        # Strip markdown code fences if present
+        if raw.startswith("```"):
+            raw = re.sub(r"^```[a-z]*\n?", "", raw)
+            raw = re.sub(r"\n?```$", "", raw)
+        data = json.loads(raw)
+    except Exception:
+        return _parse_plain_resume_text(text, source=source)
+
+    profile = Profile()
+
+    for r in data.get("experience", []):
+        bullets = [
+            Bullet(
+                text=b,
+                metrics=extract_metrics(b),
+                tools=extract_tools(b),
+                evidence_source=source,
+                confidence=score_confidence(b),
+            )
+            for b in r.get("bullets", [])
+            if isinstance(b, str) and b.strip()
+        ]
+        profile.experience.append(Role(
+            title=r.get("title", ""),
+            company=r.get("company", ""),
+            start=r.get("start", ""),
+            end=r.get("end", ""),
+            location=r.get("location", ""),
+            bullets=bullets,
+        ))
+
+    for p in data.get("projects", []):
+        bullets = [
+            Bullet(
+                text=b,
+                metrics=extract_metrics(b),
+                tools=extract_tools(b),
+                evidence_source=source,
+                confidence=score_confidence(b),
+            )
+            for b in p.get("bullets", [])
+            if isinstance(b, str) and b.strip()
+        ]
+        profile.projects.append(Project(
+            name=p.get("name", ""),
+            tech=p.get("tech", []),
+            bullets=bullets,
+        ))
+
+    profile.skills = _dedupe([s for s in data.get("skills", []) if isinstance(s, str)])
+    profile.education = [
+        {
+            "institution": e.get("institution", ""),
+            "degree": e.get("degree", ""),
+            "dates": e.get("dates", ""),
+            "location": e.get("location", ""),
+        }
+        for e in data.get("education", [])
+    ]
+    profile.certifications = [c for c in data.get("certifications", []) if isinstance(c, str)]
+
+    return profile
+
+
 def parse_pdf(file_bytes: bytes, source: str = "pdf_resume") -> Profile:
     """
-    Extract text from a PDF file and parse it.
-    Uses pypdf if available, falls back to stdlib extraction otherwise.
+    Extract text from a PDF file and parse it into a Profile.
+
+    Text extraction: pypdf (if installed) → stdlib extractor.
+    Parsing: Claude API (if ANTHROPIC_API_KEY set) → regex fallback.
+
+    PDF has no semantic structure — Claude as the parser is more reliable
+    than regex heuristics for any resume layout or encoding.
     """
     text = ""
     try:
@@ -857,7 +997,10 @@ def parse_pdf(file_bytes: bytes, source: str = "pdf_resume") -> Profile:
         pages = [page.extract_text() or "" for page in reader.pages]
         text = "\n".join(pages)
     except ImportError:
-        # No pypdf — use stdlib extractor
+        text = _extract_pdf_text_stdlib(file_bytes)
+
+    if not text.strip():
+        # pypdf gave nothing — try our stdlib extractor as a second attempt
         text = _extract_pdf_text_stdlib(file_bytes)
 
     if not text.strip():
@@ -870,7 +1013,8 @@ def parse_pdf(file_bytes: bytes, source: str = "pdf_resume") -> Profile:
     if "\\resumeSubheading" in text or "\\resumeItem" in text:
         return parse_latex(text, source=source)
 
-    return _parse_plain_resume_text(text, source=source)
+    # Claude-based parsing is the primary path; regex is the fallback.
+    return _parse_with_claude(text, source=source)
 
 
 # ---------------------------------------------------------------------------

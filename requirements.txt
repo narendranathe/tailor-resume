@@ -8,6 +8,9 @@ streamlit>=1.32.0
 pypdf>=4.0
 python-docx>=1.0
 
+# LLM-based PDF parsing (Claude as the semantic parser for PDF text)
+anthropic>=0.25
+
 # Dev / testing
 pytest>=7.4
 pytest-cov>=4.1
