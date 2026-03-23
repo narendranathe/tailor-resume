@@ -477,6 +477,12 @@ def _apply_ot1(s: str) -> str:
     return s
 
 
+# Lines whose entire content is a single OT1 glyph artifact (icon/separator lines to drop).
+_OT1_ARTIFACT_ONLY = re.compile(r'^(ffi|j)\s*$')
+# Lines that begin with an OT1 glyph used as a bullet (replace prefix with real bullet).
+_OT1_ARTIFACT_PREFIX = re.compile(r'^(ffi|j)\s+')
+
+
 def _extract_pdf_text_stdlib(data: bytes) -> str:
     """
     Stdlib-only PDF text extractor. No regex on unbounded content — avoids
@@ -836,6 +842,17 @@ def _extract_pdf_text_stdlib(data: bytes) -> str:
     text_out = re.sub(r'[ \t]+', ' ', text_out)
     # Re-strip each line after collapsing spaces.
     text_out = "\n".join(line.strip() for line in text_out.splitlines())
+
+    # (4) OT1 glyph normalization: the stdlib extractor decodes the CMR bullet
+    #     glyph (0x0F) as "ffi" and icon-font separator glyphs as "j" via latin-1
+    #     fallback. Normalize these so the parser state machine sees real bullets.
+    normalized_lines: list[str] = []
+    for line in text_out.splitlines():
+        if _OT1_ARTIFACT_ONLY.match(line):
+            continue  # lone icon/separator — drop entirely
+        line = _OT1_ARTIFACT_PREFIX.sub("• ", line)
+        normalized_lines.append(line)
+    text_out = "\n".join(normalized_lines)
 
     return text_out
 
@@ -1380,7 +1397,7 @@ def _detect_section(line: str) -> Optional[str]:
 
 def _is_bullet_line(ln: str) -> bool:
     """Return True if ln looks like a bullet-list item (any common prefix)."""
-    return ln.startswith(("•", "-", "–", "*", "·", "○", "▪")) or bool(re.match(r'^x\s+\S', ln))
+    return ln.startswith(("•", "-", "–", "*", "·", "○", "▪")) or bool(re.match(r'^(x|ffi|j)\s+\S', ln))
 
 
 def _like_title_line(ln: str) -> bool:
@@ -1388,7 +1405,7 @@ def _like_title_line(ln: str) -> bool:
     return (
         bool(ln) and ln[0:1].isupper()
         and len(ln.split()) <= 8 and len(ln) <= 80
-        and not re.match(r'^x\s+\S', ln)
+        and not re.match(r'^(x|ffi|j)\s+\S', ln)
         and not ln.startswith(("•", "-", "–", "*", "·", "○", "▪"))
     )
 
@@ -1510,10 +1527,10 @@ def _parse_plain_resume_text(text: str, source: str = "resume") -> Profile:
                 i += 2  # consume company and date lines
                 continue
 
-            # Bullet lines — standard prefixes OR "x " (LaTeX font glyph decoded as x)
+            # Bullet lines — standard prefixes OR OT1 glyph artifacts (x, ffi, j)
             if current_role and (s.startswith(("•", "-", "–", "*", "·", "○", "▪"))
-                                  or re.match(r'^x\s+\S', s)):
-                txt = s.lstrip("•-–*·○▪x ").strip()
+                                  or re.match(r'^(x|ffi|j)\s+\S', s)):
+                txt = re.sub(r'^(?:•|[-–*·○▪]|ffi|x|j)\s+', '', s).strip()
                 if len(txt) > 15:
                     bullet = Bullet(
                         text=txt,

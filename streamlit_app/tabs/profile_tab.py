@@ -50,6 +50,12 @@ def render():
 
     # ---- File upload -------------------------------------------------------
     if input_mode == "Upload file":
+        try:
+            import pdfminer  # noqa: F401
+        except ImportError:
+            st.warning(
+                "PDF parsing quality is degraded — run `pip install pdfminer.six` for best results."
+            )
         uploaded = st.file_uploader(
             "Upload your resume",
             type=["tex", "md", "txt", "pdf", "docx", "doc"],

@@ -30,6 +30,9 @@ from profile_extractor import (
     extract_metrics,
     extract_tools,
     score_confidence,
+    _is_bullet_line,
+    _OT1_ARTIFACT_ONLY,
+    _OT1_ARTIFACT_PREFIX,
     Role,
     Profile,
 )
@@ -1222,3 +1225,106 @@ class TestEnrichProfileWithClaudeMocked:
         _make_anthropic_mock(monkeypatch, json.dumps(data))
         result = _enrich_profile_with_claude(profile, source="test")
         assert len(result.experience[0].bullets) == 2
+
+
+# ---------------------------------------------------------------------------
+# _is_bullet_line — OT1 artifact prefix recognition (Issue #48)
+# ---------------------------------------------------------------------------
+class TestIsBulletLine:
+    def setup_method(self):
+        from profile_extractor import _is_bullet_line
+        self._fn = _is_bullet_line
+
+    def test_standard_bullet_dot(self):
+        assert self._fn("• Built pipelines")
+
+    def test_standard_bullet_dash(self):
+        assert self._fn("- Reduced latency by 40%")
+
+    def test_ffi_prefix_recognized_as_bullet(self):
+        """OT1 CMR glyph 0x0F decoded as 'ffi' — should be treated as a bullet."""
+        assert self._fn("ffi Architected distributed system")
+
+    def test_j_prefix_recognized_as_bullet(self):
+        """Icon-font separator glyph decoded as 'j' — should be treated as a bullet."""
+        assert self._fn("j Led cross-functional team")
+
+    def test_x_prefix_still_recognized(self):
+        """Existing CMR checkmark 'x' prefix must still work."""
+        assert self._fn("x Delivered project on time")
+
+    def test_plain_word_not_bullet(self):
+        assert not self._fn("Architected distributed system")
+
+    def test_ffi_without_trailing_space_not_bullet(self):
+        """'ffi' alone (no content after space) should not fire the pattern."""
+        assert not self._fn("ffi")
+
+
+# ---------------------------------------------------------------------------
+# _extract_pdf_text_stdlib — OT1 normalization post-pass (Issue #49)
+# ---------------------------------------------------------------------------
+class TestExtractPdfTextStdlibNormalization:
+    def setup_method(self):
+        from profile_extractor import _extract_pdf_text_stdlib
+        self._fn = _extract_pdf_text_stdlib
+
+    def _minimal_pdf(self, text_content: str) -> bytes:
+        """Build a minimal hand-crafted PDF with a single text stream."""
+        stream = text_content.encode("latin-1", errors="replace")
+        stream_len = len(stream)
+        pdf = (
+            b"%PDF-1.4\n"
+            b"1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n"
+            b"2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n"
+            b"3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792]"
+            b" /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>\nendobj\n"
+            b"4 0 obj\n<< /Length " + str(stream_len).encode() + b" >>\nstream\n"
+            + stream + b"\nendstream\nendobj\n"
+            b"5 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n"
+            b"xref\n0 6\n0000000000 65535 f \n"
+            b"trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n0\n%%EOF"
+        )
+        return pdf
+
+    def test_ffi_prefix_line_converted_to_bullet(self):
+        """'ffi Built pipelines' → '• Built pipelines' after normalization."""
+        from profile_extractor import _OT1_ARTIFACT_PREFIX
+        result = _OT1_ARTIFACT_PREFIX.sub("• ", "ffi Built pipelines")
+        assert result.startswith("•")
+
+    def test_j_prefix_line_converted_to_bullet(self):
+        """'j Led team of 5' → '• Led team of 5' after normalization."""
+        from profile_extractor import _OT1_ARTIFACT_PREFIX
+        result = _OT1_ARTIFACT_PREFIX.sub("• ", "j Led team of 5")
+        assert result.startswith("•")
+
+    def test_artifact_only_line_matches_drop_pattern(self):
+        """A line that is just 'ffi' or 'j' with optional whitespace is a lone icon."""
+        from profile_extractor import _OT1_ARTIFACT_ONLY
+        assert _OT1_ARTIFACT_ONLY.match("ffi")
+        assert _OT1_ARTIFACT_ONLY.match("j")
+        assert _OT1_ARTIFACT_ONLY.match("ffi  ")
+
+    def test_real_word_starting_with_j_not_dropped(self):
+        """'JavaScript' must not be classified as an artifact-only line."""
+        from profile_extractor import _OT1_ARTIFACT_ONLY
+        assert not _OT1_ARTIFACT_ONLY.match("JavaScript developer")
+
+    def test_ffi_prefix_not_stripped_from_middle_of_line(self):
+        """The prefix regex only matches at the start of a line."""
+        from profile_extractor import _OT1_ARTIFACT_PREFIX
+        result = _OT1_ARTIFACT_PREFIX.sub("• ", "Skills: ffi Python")
+        assert "ffi Python" in result  # unchanged — 'ffi' not at start
+
+    def test_parse_plain_resume_with_ffi_bullets_extracts_bullets(self):
+        """End-to-end: text with 'ffi ' bullets gets bullets extracted."""
+        text = (
+            "Experience\n"
+            "Data Engineer  Acme Corp  2022 – 2024\n"
+            "ffi Architected distributed ETL pipeline reducing costs by 30%\n"
+            "ffi Led migration from Hadoop to Spark cutting runtime by 50%\n"
+        )
+        p = _parse_plain_resume_text(text)
+        assert len(p.experience) >= 1
+        assert len(p.experience[0].bullets) >= 1
