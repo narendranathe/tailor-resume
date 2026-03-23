@@ -483,6 +483,25 @@ _OT1_ARTIFACT_ONLY = re.compile(r'^(ffi|j)\s*$')
 _OT1_ARTIFACT_PREFIX = re.compile(r'^(ffi|j)\s+')
 
 
+def _normalize_ot1_artifacts(text: str) -> str:
+    """
+    Normalize OT1 font glyph artifacts that appear regardless of extraction tier.
+
+    pypdf and the stdlib extractor both decode the CMR bullet glyph (0x0F) as
+    "ffi" and icon-font separator glyphs as "j" when no ToUnicode CMap is present.
+    This pass converts those back to real bullets and drops lone icon-only lines.
+    Safe to apply to pdfminer output too — pdfminer reads the CMap correctly so
+    no lines there start with "ffi " or are just "j".
+    """
+    out: list[str] = []
+    for line in text.splitlines():
+        if _OT1_ARTIFACT_ONLY.match(line):
+            continue
+        line = _OT1_ARTIFACT_PREFIX.sub("• ", line)
+        out.append(line)
+    return "\n".join(out)
+
+
 def _extract_pdf_text_stdlib(data: bytes) -> str:
     """
     Stdlib-only PDF text extractor. No regex on unbounded content — avoids
@@ -843,16 +862,8 @@ def _extract_pdf_text_stdlib(data: bytes) -> str:
     # Re-strip each line after collapsing spaces.
     text_out = "\n".join(line.strip() for line in text_out.splitlines())
 
-    # (4) OT1 glyph normalization: the stdlib extractor decodes the CMR bullet
-    #     glyph (0x0F) as "ffi" and icon-font separator glyphs as "j" via latin-1
-    #     fallback. Normalize these so the parser state machine sees real bullets.
-    normalized_lines: list[str] = []
-    for line in text_out.splitlines():
-        if _OT1_ARTIFACT_ONLY.match(line):
-            continue  # lone icon/separator — drop entirely
-        line = _OT1_ARTIFACT_PREFIX.sub("• ", line)
-        normalized_lines.append(line)
-    text_out = "\n".join(normalized_lines)
+    # (4) OT1 glyph normalization — shared with pypdf tier.
+    text_out = _normalize_ot1_artifacts(text_out)
 
     return text_out
 
@@ -1299,6 +1310,10 @@ def parse_pdf(file_bytes: bytes, source: str = "pdf_resume") -> Profile:
             "It may be a scanned/image-only PDF. "
             "Try copy-pasting the text content instead."
         )
+
+    # Apply OT1 artifact normalization for all tiers (pypdf and stdlib both
+    # decode the CMR bullet glyph as "ffi"; pdfminer is already correct).
+    text = _normalize_ot1_artifacts(text)
 
     if "\\resumeSubheading" in text or "\\resumeItem" in text:
         return parse_latex(text, source=source)

@@ -33,6 +33,7 @@ from profile_extractor import (
     _is_bullet_line,
     _OT1_ARTIFACT_ONLY,
     _OT1_ARTIFACT_PREFIX,
+    _normalize_ot1_artifacts,
     Role,
     Profile,
 )
