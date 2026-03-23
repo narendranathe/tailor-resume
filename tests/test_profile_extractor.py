@@ -24,6 +24,8 @@ from profile_extractor import (
     _dedupe,
     _detect_section,
     _parse_plain_resume_text,
+    _parse_with_claude,
+    _enrich_profile_with_claude,
     profile_to_dict,
     extract_metrics,
     extract_tools,
@@ -1016,3 +1018,207 @@ class TestProfileToDict:
         profile = Profile()
         d = profile_to_dict(profile)
         assert "experience" in d
+
+
+# ---------------------------------------------------------------------------
+# _parse_with_claude — direct calls with no key and mocked API
+# ---------------------------------------------------------------------------
+def _make_anthropic_mock(monkeypatch, response_text: str):
+    """Inject a fake anthropic module so tests run without the package installed."""
+    import sys
+    from unittest.mock import MagicMock
+
+    mock_resp = MagicMock()
+    mock_resp.content = [MagicMock(text=response_text)]
+    mock_anthropic = MagicMock()
+    mock_anthropic.Anthropic.return_value.messages.create.return_value = mock_resp
+    monkeypatch.setitem(sys.modules, "anthropic", mock_anthropic)
+    return mock_anthropic
+
+
+def _make_anthropic_mock_error(monkeypatch, exc: Exception):
+    """Inject a fake anthropic module that raises exc on messages.create."""
+    import sys
+    from unittest.mock import MagicMock
+
+    mock_anthropic = MagicMock()
+    mock_anthropic.Anthropic.return_value.messages.create.side_effect = exc
+    monkeypatch.setitem(sys.modules, "anthropic", mock_anthropic)
+    return mock_anthropic
+
+
+class TestParseWithClaude:
+    def test_no_api_key_returns_plain_parse(self, monkeypatch):
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        result = _parse_with_claude(
+            "Data Engineer at Acme Inc  Jan 2022 – Present\n• Built ETL pipelines\nSkills: Python SQL",
+            source="test",
+        )
+        assert result is not None
+        assert hasattr(result, "experience")
+
+    def test_mocked_api_returns_structured_profile(self, monkeypatch):
+        import json
+
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+        data = {
+            "experience": [
+                {
+                    "title": "Data Engineer",
+                    "company": "Acme Corp",
+                    "start": "Jan 2022",
+                    "end": "Present",
+                    "location": "Dallas, TX",
+                    "bullets": ["Built scalable ETL pipelines", "Reduced load time by 40%"],
+                }
+            ],
+            "projects": [
+                {"name": "ML Pipeline", "tech": ["Python", "Spark"], "bullets": ["Processed 1M rows/day"]}
+            ],
+            "skills": ["Python", "SQL", "Spark"],
+            "education": [
+                {"institution": "UT Dallas", "degree": "MS Computer Science",
+                 "dates": "2020 – 2022", "location": ""}
+            ],
+            "certifications": ["AWS Solutions Architect"],
+        }
+        _make_anthropic_mock(monkeypatch, json.dumps(data))
+        result = _parse_with_claude("raw resume text here", source="test")
+        assert len(result.experience) == 1
+        assert result.experience[0].title == "Data Engineer"
+        assert result.experience[0].company == "Acme Corp"
+        assert len(result.experience[0].bullets) == 2
+        assert len(result.projects) == 1
+        assert "Python" in result.skills
+        assert len(result.education) == 1
+        assert "AWS Solutions Architect" in result.certifications
+
+    def test_mocked_api_with_json_fenced_response(self, monkeypatch):
+        import json
+
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+        data = {"experience": [], "projects": [], "skills": ["Python", "SQL"],
+                "education": [], "certifications": []}
+        fenced = "```json\n" + json.dumps(data) + "\n```"
+        _make_anthropic_mock(monkeypatch, fenced)
+        result = _parse_with_claude("resume text", source="test")
+        assert "Python" in result.skills
+        assert "SQL" in result.skills
+
+    def test_api_exception_falls_back_to_plain_parse(self, monkeypatch):
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+        _make_anthropic_mock_error(monkeypatch, RuntimeError("API timeout"))
+        result = _parse_with_claude(
+            "Data Engineer at Acme  Jan 2022 – Present\n- Built pipelines",
+            source="test",
+        )
+        assert result is not None  # falls back gracefully
+
+    def test_invalid_json_response_falls_back(self, monkeypatch):
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+        _make_anthropic_mock(monkeypatch, "this is not json at all")
+        result = _parse_with_claude("resume text", source="test")
+        assert result is not None  # falls back on json.JSONDecodeError
+
+
+# ---------------------------------------------------------------------------
+# _enrich_profile_with_claude — mocked API rebuild path
+# ---------------------------------------------------------------------------
+class TestEnrichProfileWithClaudeMocked:
+    def test_no_api_key_returns_original_profile(self, monkeypatch):
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        profile = parse_blob("Data Engineer at Acme  Jan 2022 – Present\n- Built pipelines")
+        result = _enrich_profile_with_claude(profile, source="test")
+        assert result is profile  # exact same object returned
+
+    def test_mocked_api_rebuilds_enriched_profile(self, monkeypatch):
+        import json
+
+        profile = parse_blob(
+            "Data Engineer at Acme Inc  Jan 2022 – Present\n• Built ETL pipelines\nSkills: Python, SQL"
+        )
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+        enriched_data = {
+            "experience": [
+                {
+                    "title": "Data Engineer",
+                    "company": "Acme Inc",
+                    "start": "Jan 2022",
+                    "end": "Present",
+                    "location": "",
+                    "bullets": [
+                        {"text": "Built scalable ETL pipelines processing 1M rows/day", "confidence": "high"},
+                        {"text": "Reduced query latency by 40% using partitioning", "confidence": "high"},
+                    ],
+                }
+            ],
+            "projects": [
+                {
+                    "name": "Real-Time Dashboard",
+                    "tech": ["Kafka", "Spark"],
+                    "bullets": [{"text": "Streamed 500k events/sec", "confidence": "high"}],
+                }
+            ],
+            "skills": ["Python", "SQL", "Spark", "Kafka"],
+            "education": [
+                {"institution": "UT Dallas", "degree": "MS CS", "dates": "2020-2022", "location": ""}
+            ],
+            "certifications": ["AWS Data Engineer"],
+        }
+        _make_anthropic_mock(monkeypatch, json.dumps(enriched_data))
+        result = _enrich_profile_with_claude(profile, source="test")
+        assert len(result.experience) == 1
+        assert len(result.experience[0].bullets) == 2
+        assert "Spark" in result.skills
+        assert "Kafka" in result.skills
+        assert len(result.projects) == 1
+        assert "AWS Data Engineer" in result.certifications
+
+    def test_mocked_api_with_fenced_json(self, monkeypatch):
+        import json
+
+        profile = parse_blob("Engineer at Co  2022-Present\n- Did things")
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+        data = {
+            "experience": [],
+            "projects": [],
+            "skills": ["Python", "Go"],
+            "education": [],
+            "certifications": ["GCP Professional"],
+        }
+        fenced = "```json\n" + json.dumps(data) + "\n```"
+        _make_anthropic_mock(monkeypatch, fenced)
+        result = _enrich_profile_with_claude(profile, source="test")
+        assert "GCP Professional" in result.certifications
+
+    def test_api_exception_returns_original_profile(self, monkeypatch):
+        profile = parse_blob("Engineer at Co  2022-Present\n- Built things")
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+        _make_anthropic_mock_error(monkeypatch, RuntimeError("network error"))
+        result = _enrich_profile_with_claude(profile, source="test")
+        assert result is profile  # enrichment never blocks; returns original
+
+    def test_mocked_api_with_string_bullets(self, monkeypatch):
+        import json
+
+        profile = parse_blob("Engineer at Co  2022-Present\n- Built pipelines")
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+        data = {
+            "experience": [
+                {
+                    "title": "Engineer",
+                    "company": "Co",
+                    "start": "2022",
+                    "end": "Present",
+                    "location": "",
+                    "bullets": ["Built high-throughput pipelines", "Reduced costs by 30%"],
+                }
+            ],
+            "projects": [],
+            "skills": ["Python"],
+            "education": [],
+            "certifications": [],
+        }
+        _make_anthropic_mock(monkeypatch, json.dumps(data))
+        result = _enrich_profile_with_claude(profile, source="test")
+        assert len(result.experience[0].bullets) == 2
