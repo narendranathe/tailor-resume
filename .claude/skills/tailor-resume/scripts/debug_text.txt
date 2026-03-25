@@ -1,0 +1,92 @@
++ 1 (573 ) 466 -6656 — edara.narendranath@gmail.com
+Summary
+Data Engineer with expertise in
+designing and deploying scalable data
+platforms. Passionate about
+leveraging AI to tackle complex
+challenges. Specialized in transforming
+fragmented data ecosystems into
+unified analytics infrastructure that
+enables cross-functional teams to
+drive data-driven decision making.
+Education
+Missouri University of Sci & Tech
+Jan 2022 t Dec 2023
+Maste r of Science, IST
+Technical Skills
+Python, Spark, Kafka, Airflow,
+Databricks, MLOps, Docker,
+Kubernetes, SQL, Azure, AWS, CI/CD,
+MLflow, Feature Engineering,
+Microsoft Fabric, Power BI, FastAPI,
+Streamlit, LangChain, RAG
+Certifications
+DP -700 : Microsoft Certified Data
+Engineer Associate
+Projects
+- Real -Time Fraud Detection
+Engineered end -to-end ML pipeline
+with Spark, Kafka, and Airflow,
+featuring synthetic data generation,
+feature engineering, LightGBM model
+training with MLflow tracking, and
+MLOps infrastructure. Deployed via
+Docker .
+- Automated Portfolio Risk(VaR)
+Built Apache Kafka + Spark streaming
+pipeline (47.8 TPS, 15K+ records) with
+FastAPI backend and Streamlit
+dashboard calculating VaR with sub-5 -
+second latency, delivering ML-driven
+risk alerts via Docker containerization.
+Narendranath Edara
+— LinkedIn — narendranathe.github.io
+Work Experience
+Data Engineer : ExponentHR , Dallas, TX July 2024 t Present
+x Architected an AI-powered embedded analytics platform on Microsoft
+Fabric, migrated legacy SQL to DAX -based semantic models , reducing client
+support volume by 40%, improving query performance by 3x , and enabling
+near real-time editable self-service reportingfor enterprise users.
+x Owned end -to -end CI/CD infrastructureand production reliability,
+compressing deployment cycles from 3 months to 14 days (85% faster),
+ensuring consistent data delivery toSSRS and Power BI systems.
+x Led production recovery using containerized AAG failover and automated
+backup strategies, restoring systems in < 1 hour and sustaining 99.99%
+uptime SLA for client data access.
+x Optimized SQL Server OLAP performance through star schema redesign
+(Dim & Fact modeling) and index tuning, reducing query latency by 20% and
+accelerating self-service analytics adoption across business teams.
+x Reengineered CDC based SSIS ETL pipelinesto process only incremental
+changes (last 3 days) instead of full table scans, reducing runtime by 70%
+and cutting compute costs by 30% while maintaining data freshnessSLAs.
+x Established comprehensive data quality frameworks and observability
+metrics within data pipelines, ensuring real-time monitoring across all data
+processes.
+x Designed AI-driven automation agents integrating Git and Azure DevOps
+OData APIs , eliminating 15+ hours/sprint of manual reporting and enabling
+real-time sprint visibility for cross-functional stakeholders.
+Data Engineer : Mi ssouri S&T, Rolla, MO Aug 2023 t July202 4
+x Engineered Azure AI Anomaly Detector pipelines using optimal algorithms
+for diverse time -series data, achieving 95%+ detection accuracy and
+enabling proactive alerting to monito r applications.
+x Designed configurable REST APIs with customizable sensitivity thresholds,
+enabling dynamic anomaly detection tuning based on individual risk profiles
+reducing false positives by 40%.
+x Deployed anomaly detection services on Azure Kubernetes Service (AKS)
+with auto-scaling policies, ensuring 99.9% availabilityand 50%
+infrastructure cost reductionthrough efficient resource utilization.
+Business Analyst: Zomat o , Hyderabad , India Mar 2018 t Sept 2020
+x Designed a real-time data analytics platformfor eCommerce and
+competitor insights, directly contributing a 9% increase in market share and
+enabling data-driven pricing strategies.
+x Optimized search relevance algorithmsusing ranking models and
+contextual signals, improving search-to-conversion rates and aligning results
+with user intent across millions of queries.
+x Built an Elasticsearch-powered enterprise search engine indexing 100K+
+documents with intelligent rankingv reducing Support Desk workload by
+80% through automated query resolution and self-service knowledge
+discovery.
+Publications
+An Examination of Sentiment Analysis as a Tool for Gathering Visitor
+Dr. David Bojanic, Narendranath Edara, Jane Zhang —
+https://doi.org/10.1080/10495142.2025.2525123

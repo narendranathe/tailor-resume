@@ -9,3 +9,7 @@ openai>=1.0
 
 # MCP server (Claude Code plugin — exposes pipeline as tools)
 mcp>=1.0
+
+# Anthropic SDK — enables Tier-0 Claude vision/document extraction for PDFs and images
+# See scripts/claude_vision_extractor.py
+anthropic>=0.40.0

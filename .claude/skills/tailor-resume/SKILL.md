@@ -11,6 +11,7 @@ Ask the user for:
 
 1. **Job Description** — paste JD text
 2. **Experience artifacts** — one or more of:
+   - **Attach a PDF or image file** directly to this conversation (Claude reads it natively — handles scanned PDFs, screenshots, image-based resumes, any format; see Tier 0 below)
    - Paste a **work experience blob** (free-form text describing roles, projects, outcomes)
    - Upload/paste current resume (`.tex`, `.md`, `.pdf`, `.docx` text)
    - Upload/paste **LinkedIn PDF export** text
@@ -61,9 +62,17 @@ Each bullet is tagged with:
 - `evidence_source`: where it came from (blob, resume, LinkedIn, GitHub)
 - `confidence`: high / medium / low
 
+**Extraction tiers (auto-selected by input format):**
+- **Tier 0** — Claude vision/document API: attach any PDF or image directly to the conversation. Claude reads it natively — handles scanned PDFs, image-based resumes, screenshots, and any PDF that text extractors mangle. Requires `ANTHROPIC_API_KEY`. Use `scripts/claude_vision_extractor.py`.
+- **Tier 1** — pdfminer.six: best for LaTeX/CMR-font PDFs (`pip install pdfminer.six`)
+- **Tier 2** — pypdf: fast for Word-generated PDFs (`pip install pypdf`)
+- **Tier 3** — stdlib fallback: pure Python, zero dependencies
+
 **Input handling guide:**
 | Input type | What to extract |
 |---|---|
+| PDF/image attachment (Tier 0) | Use Claude vision extraction — reads file directly, returns full structured profile. Handles scanned, image-based, and garbled PDFs. |
+| Scanned or image PDF | Always use Tier 0 — text extractors fail on these; Claude vision handles them perfectly. |
 | Work blob | roles, companies, dates, outcomes, tools, scale signals |
 | LaTeX resume | parse `\resumeItem` and `\resumeSubheading` blocks |
 | Markdown resume | parse `##`, `-` bullet lists by role |
@@ -269,3 +278,5 @@ To save the profile for future tailoring sessions without re-uploading:
 See [REFERENCE.md](REFERENCE.md) — 2026 resume philosophy, 4-phase framework, bullet scoring rubric, metric prompts.
 See [EXAMPLES.md](EXAMPLES.md) — example invocations and blob formats.
 See `scripts/` — deterministic helpers for extraction, gap analysis, rendering, RAG, and PDF export.
+See `scripts/claude_vision_extractor.py` — Tier-0 vision-based extraction for any PDF or image (scanned, image-based, screenshot).
+See `templates/cover_letter_template.tex` — companion cover letter template with identical ATS-safe header style.

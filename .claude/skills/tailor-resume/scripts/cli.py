@@ -1,9 +1,11 @@
 """
 cli.py
-Thin orchestrator for the tailor-resume pipeline.
+Thin CLI shell for the tailor-resume pipeline.
 
-Chains: profile_extractor -> jd_gap_analyzer -> latex_renderer in a single command.
-All resume logic lives in the individual modules; this file contains only glue.
+All pipeline logic lives in pipeline.py.  This file contains only:
+  - argparse wiring
+  - file-path → TailorConfig conversion
+  - stdout printing of the gap report
 
 Usage:
     python cli.py \\
@@ -11,7 +13,6 @@ Usage:
         --artifact fixtures/sample_blob.txt:blob \\
         --name "Jane Smith" \\
         --email "jane@example.com" \\
-        --linkedin "https://linkedin.com/in/jane-smith" \\
         --output out/resume.tex
 
     # Multiple artifacts (merged):
@@ -29,32 +30,17 @@ Artifact format: <path>:<format>
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 from pathlib import Path
 
-# Add scripts dir to path when run standalone  # noqa: E402
+# Add scripts dir to path when run standalone
 _SCRIPTS = Path(__file__).parent
 if str(_SCRIPTS) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS))
 
-from jd_gap_analyzer import run_analysis  # noqa: E402
-from latex_renderer import build_from_profile  # noqa: E402
-from profile_extractor import (  # noqa: E402
-    merge_profiles,
-    parse_blob,
-    parse_latex,
-    parse_linkedin,
-    parse_markdown,
-)
-from resume_types import profile_to_dict  # noqa: E402
+from pipeline import TailorConfig, execute  # noqa: E402
 
-_PARSERS = {
-    "blob": parse_blob,
-    "markdown": parse_markdown,
-    "latex": parse_latex,
-    "linkedin": parse_linkedin,
-}
+_VALID_FORMATS = {"blob", "markdown", "latex", "linkedin"}
 
 _DEFAULT_TEMPLATE = str(
     Path(__file__).parent.parent / "templates" / "resume_template.tex"
@@ -63,54 +49,28 @@ _DEFAULT_TEMPLATE = str(
 
 def run_pipeline(
     jd_path: str,
-    artifacts: list[tuple[str, str]],
+    artifacts: list,
     output_path: str,
     header: dict,
     template_path: str = _DEFAULT_TEMPLATE,
     top_gaps: int = 5,
 ) -> None:
-    """
-    Full pipeline: parse artifacts -> gap analysis -> LaTeX output.
-
-    Args:
-        jd_path: Path to job description text file.
-        artifacts: List of (file_path, format) tuples.
-        output_path: Where to write resume.tex.
-        header: Dict with name, email, phone, linkedin, github, portfolio.
-        template_path: Path to LaTeX template.
-        top_gaps: Number of top gap signals to print.
-    """
-    # 1. Parse all input artifacts and merge into one profile
-    profiles = []
-    for path, fmt in artifacts:
-        parser = _PARSERS.get(fmt, parse_blob)
-        with open(path, encoding="utf-8") as f:
-            text = f.read()
-        profiles.append(parser(text))
-
-    profile = merge_profiles(*profiles) if len(profiles) > 1 else profiles[0]
-    profile_dict = profile_to_dict(profile)
-
-    # 2. Gap analysis — prints report to stdout
+    """Backward-compat wrapper — delegates to pipeline.execute()."""
     with open(jd_path, encoding="utf-8") as f:
         jd_text = f.read()
-
-    resume_text = json.dumps(profile_dict)
-    report = run_analysis(jd_text, resume_text, top_n=top_gaps)
-
+    config = TailorConfig(
+        jd_text=jd_text,
+        artifacts=artifacts,
+        output_path=output_path,
+        header=header,
+        template_path=template_path,
+        top_gaps=top_gaps,
+    )
+    result = execute(config)
     print("\n=== Gap Analysis ===")
-    print(f"ATS Score: {report.ats_score_estimate}/100")
-    for i, gap in enumerate(report.top_missing, 1):
-        print(f"\n{i}. [{gap.priority.upper()}] {gap.category}")
-        print(f"   Missing: {', '.join(gap.jd_keywords[:5])}")
-        for angle in gap.suggested_angles:
-            print(f"     - {angle}")
-    for rec in report.recommendations:
-        print(f"  \u2022 {rec}")
-
-    # 3. Render LaTeX
-    build_from_profile(profile_dict, template_path, output_path, header)
-    print(f"\n[OK] Resume written to: {output_path}")
+    for line in result.gap_summary:
+        print(line)
+    print(f"\n[OK] Resume written to: {result.output_path}")
 
 
 def main() -> None:
@@ -142,33 +102,42 @@ def main() -> None:
     parser.add_argument("--top-gaps", type=int, default=5, help="Number of gap signals to show")
     args = parser.parse_args()
 
+    # Validate and parse artifact strings
     artifacts = []
     for raw in args.artifacts:
         if ":" in raw:
             path, fmt = raw.rsplit(":", 1)
         else:
             path, fmt = raw, "blob"
-        if fmt not in _PARSERS:
-            parser.error(f"Unknown format '{fmt}'. Choose from: {list(_PARSERS)}")
+        if fmt not in _VALID_FORMATS:
+            parser.error(f"Unknown format '{fmt}'. Choose from: {sorted(_VALID_FORMATS)}")
         artifacts.append((path, fmt))
 
-    header = {
-        "name": args.name,
-        "phone": args.phone,
-        "email": args.email,
-        "linkedin": args.linkedin,
-        "github": args.github,
-        "portfolio": args.portfolio,
-    }
+    with open(args.jd, encoding="utf-8") as f:
+        jd_text = f.read()
 
-    run_pipeline(
-        jd_path=args.jd,
+    config = TailorConfig(
+        jd_text=jd_text,
         artifacts=artifacts,
         output_path=args.output,
-        header=header,
+        header={
+            "name": args.name,
+            "phone": args.phone,
+            "email": args.email,
+            "linkedin": args.linkedin,
+            "github": args.github,
+            "portfolio": args.portfolio,
+        },
         template_path=args.template,
         top_gaps=args.top_gaps,
     )
+
+    result = execute(config)
+
+    print("\n=== Gap Analysis ===")
+    for line in result.gap_summary:
+        print(line)
+    print(f"\n[OK] Resume written to: {result.output_path}")
 
 
 if __name__ == "__main__":
