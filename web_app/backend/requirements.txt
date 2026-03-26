@@ -1,0 +1,33 @@
+# tailor-resume web backend dependencies
+# Pin minor versions; patch versions float.
+
+# ── Web framework ──────────────────────────────────────────────────────────
+fastapi>=0.111,<0.112
+uvicorn[standard]>=0.29,<0.30
+python-multipart>=0.0.9       # required for Form / File uploads
+
+# ── Config ─────────────────────────────────────────────────────────────────
+pydantic>=2.7,<3
+pydantic-settings>=2.3,<3
+
+# ── Auth ───────────────────────────────────────────────────────────────────
+PyJWT>=2.8,<3                  # Clerk RS256 JWT verification
+cryptography>=42               # RSA key support for PyJWT
+
+# ── Database / storage ─────────────────────────────────────────────────────
+supabase>=2.4,<3               # Supabase Python client (optional — SQLite fallback if not configured)
+
+# ── PDF / DOCX parsing (shared with CLI pipeline) ──────────────────────────
+pypdf>=4.2,<5
+pdfminer.six>=20221105
+python-docx>=1.1,<2
+
+# ── NLP / embeddings ───────────────────────────────────────────────────────
+scikit-learn>=1.4              # TF-IDF fallback embedder
+numpy>=1.26,<3
+
+# ── Anthropic (Claude-assisted enrichment, optional) ──────────────────────
+anthropic>=0.28,<1
+
+# ── OpenAI embeddings (optional) ───────────────────────────────────────────
+openai>=1.30,<2
