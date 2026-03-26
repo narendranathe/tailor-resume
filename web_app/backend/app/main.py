@@ -40,9 +40,11 @@ def create_app() -> FastAPI:
     # ── Routers ─────────────────────────────────────────────────────────────
     from app.routes.resume import router as resume_router
     from app.routes.profile import router as profile_router
+    from app.routes.billing import router as billing_router
 
     app.include_router(resume_router, prefix=f"/api/{settings.API_VERSION}")
     app.include_router(profile_router, prefix=f"/api/{settings.API_VERSION}")
+    app.include_router(billing_router, prefix=f"/api/{settings.API_VERSION}")
 
     return app
 

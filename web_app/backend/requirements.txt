@@ -31,3 +31,6 @@ anthropic>=0.28,<1
 
 # ── OpenAI embeddings (optional) ───────────────────────────────────────────
 openai>=1.30,<2
+
+# ── Stripe billing (optional — billing disabled if STRIPE_SECRET_KEY not set) ─
+stripe>=9.0,<10

@@ -18,6 +18,7 @@ from pydantic import BaseModel
 
 from app.auth import get_current_user
 from app.config import settings
+from app.middleware.usage import check_usage, increment_usage
 
 router = APIRouter(tags=["resume"])
 
@@ -52,6 +53,9 @@ async def tailor_resume(
     Accept a job description + resume artifact, run the tailor-resume pipeline,
     and return ATS score, gap summary, report, and (optionally) the compiled LaTeX.
     """
+    # Enforce usage limits before running the pipeline
+    check_usage(user_id)
+
     artifact_bytes = await artifact.read()
     artifact_filename = artifact.filename or "resume"
 
@@ -74,6 +78,9 @@ async def tailor_resume(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"Pipeline error: {exc}",
         ) from exc
+
+    # Pipeline succeeded — record the usage
+    increment_usage(user_id)
 
     # Read generated .tex if it exists
     tex_b64 = None

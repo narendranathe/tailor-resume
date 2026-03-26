@@ -58,9 +58,18 @@ class Settings(BaseSettings):
     def has_supabase(self) -> bool:
         return bool(self.SUPABASE_URL and self.SUPABASE_SERVICE_KEY)
 
+    # ── Stripe (optional — billing disabled if not set) ────────────────────
+    STRIPE_SECRET_KEY: str = ""
+    STRIPE_WEBHOOK_SECRET: str = ""
+    STRIPE_PRO_PRICE_ID: str = ""   # Stripe Price ID for $9/mo Pro plan
+
     @property
     def has_pinecone(self) -> bool:
         return bool(self.PINECONE_API_KEY)
+
+    @property
+    def has_stripe(self) -> bool:
+        return bool(self.STRIPE_SECRET_KEY)
 
 
 @lru_cache
