@@ -48,10 +48,30 @@ def escape_url(url: str) -> str:
 # Profile → LaTeX block builders
 # ---------------------------------------------------------------------------
 
+BULLET_WORD_LIMIT = 20  # hard 2-line limit at 11pt in standard resume layout
+
+
+def truncate_to_limit(text: str, limit: int = BULLET_WORD_LIMIT) -> str:
+    """
+    Truncate bullet text to `limit` words.
+    Walks back up to 3 words to find a natural punctuation boundary (,;))
+    before appending ellipsis. Preserves the full text when under the limit.
+    """
+    words = text.split()
+    if len(words) <= limit:
+        return text
+    chunk = words[:limit]
+    for i in range(len(chunk) - 1, max(len(chunk) - 4, 0), -1):
+        if chunk[i].endswith((",", ";", ")")):
+            return " ".join(chunk[:i + 1])
+    return " ".join(chunk) + "..."
+
+
 def render_bullets(bullets: List[Dict]) -> str:
     lines = ["    \\resumeItemListStart"]
     for b in bullets[:6]:  # max 6 bullets per role
-        text = escape(b.get("text", ""))
+        raw = b.get("text", "")
+        text = escape(truncate_to_limit(raw))
         lines.append(f"      \\resumeItem{{{text}}}")
     lines.append("    \\resumeItemListEnd")
     return "\n".join(lines)

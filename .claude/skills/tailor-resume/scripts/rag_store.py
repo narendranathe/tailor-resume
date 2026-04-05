@@ -197,7 +197,9 @@ class SQLiteStore:
                 stored_at REAL NOT NULL
             )
         """)
-        self._conn.execute("CREATE INDEX IF NOT EXISTS idx_user ON profiles(user_id)")
+        self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_user_time ON profiles(user_id, stored_at DESC)"
+        )
         self._conn.commit()
 
     def store(self, user_id: str, profile: Dict, metadata: Optional[Dict] = None) -> str:

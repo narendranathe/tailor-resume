@@ -113,6 +113,24 @@ Key metrics I can confirm:
 
 ---
 
+---
+
+## Example 7 — STAR-compliant bullet output (≤20 words each)
+
+When rewriting bullets, every output must satisfy: Action + Result + ≤20 words.
+
+| Input blob bullet | STAR-compliant output (≤20 words) |
+|---|---|
+| "Built a governed semantic layer on Azure Databricks tracking 40+ KPIs, cut support tickets by 40%" | "Governed semantic layer on Databricks: 40+ KPIs standardized, support tickets cut 40%." *(12 words)* |
+| "Owned CI/CD end-to-end through Azure DevOps for 15 data pipelines, deployment went from 3 months to 14 days" | "Owned CI/CD for 15 pipelines via Azure DevOps, compressing cycles 3 months → 14 days." *(15 words)* |
+| "Re-engineered ETL from full-table reloads to CDC incremental capture cutting runtime from 30 min to under 8 min" | "Migrated ETL to CDC upserts, cutting runtime 73% (30 min → 8 min) and costs 67%." *(16 words)* |
+
+**Rules enforced by renderer:**
+- Bullets >20 words are truncated at natural punctuation boundary
+- `star_validator.score_star()` flags bullets missing Action or Result
+
+---
+
 ## PDF export quick reference
 ```bash
 # Local (requires TeX distribution — MiKTeX or TeX Live)

@@ -93,3 +93,4 @@ class GapReport:
     keyword_gaps: List[Tuple[str, int]]   # (keyword, jd_freq) missing from resume
     ats_score_estimate: int               # 0-100 rough estimate
     recommendations: List[str]
+    user_id: str = ""                     # opaque tenant key; empty = anonymous

@@ -9,16 +9,26 @@
 
 ---
 
-## High-value bullet pattern
-`Accomplished X as measured by Y by doing Z`
+## STAR Method — Hard Requirement on Every Bullet
 
-**Good:**
-- Reduced batch runtime by 73% (30 min → 8 min) by migrating full-table reloads to CDC merge upserts, cutting compute costs by ~67%.
-- Built Pytest suite + GitHub Actions CI for 12 pipelines, reducing production data defects by 40% and eliminating recurring on-call pages.
+Every bullet must satisfy ALL of:
+1. **Action** — begins with or contains a strong action verb (built, reduced, migrated, architected…)
+2. **Result** — contains at least one measurable outcome (%, $, time, count, before/after)
+3. **≤20 words** — the 2-line limit; bullets over this are truncated automatically at render time
 
-**Weak (remove):**
-- Optimized pipelines for better performance.
-- Worked on improving data quality.
+Situation and Task context is embedded in the role header above the bullet (resume compression).
+The renderer enforces ≤20 words via `truncate_to_limit()` — but write compliant bullets before render.
+
+## Compressed STAR form (≤20 words)
+`[Action verb] [system/what] by [method], [metric result].`
+
+**Compliant (≤20 words):**
+- Reduced batch runtime 73% (30 min → 8 min) by migrating to CDC upserts, cutting costs 67%. *(17 words)*
+- Built Pytest suite for 12 pipelines via GitHub Actions, reducing defects 40%. *(13 words)*
+
+**Non-compliant (fix before render):**
+- Optimized pipelines for better performance. *(no result metric)*
+- Worked on improving data quality across the enterprise data team over multiple quarters. *(no action verb, no metric, >20 words)*
 
 ---
 
@@ -79,9 +89,14 @@ Cron jobs are not acceptable. Bad data triggers automated AI actions with real c
 | Metric specificity | No numbers | 1 number | Before/after or % + abs |
 | Technical depth | Tool name only | Method described | Trade-off explained |
 | JD relevance | Off-topic | Tangential | Direct MQ match |
-| Concision | >25 words | 20–25 words | <20 words |
+| Concision (hard limit) | >20 words — truncated at render | 16–20 words | ≤15 words |
 
 **Target: 9+ / 12** for the 3–5 most important bullets.
+
+**ATS score formula (4-component):**
+```
+40% keyword overlap  +  30% category coverage  +  20% bullet quality (STAR + metrics)  +  10% seniority signal
+```
 
 ---
 
@@ -98,10 +113,10 @@ Cron jobs are not acceptable. Bad data triggers automated AI actions with real c
 > "Your ability to get a job should be based on your experiences and capabilities, not your resume writing skills."
 
 - **Single page always** — forces prioritization; recruiters don't read page 2
-- **Factual integrity** — never fabricate; reframe real evidence with stronger framing
+- **Evidence reframing, not understatement** — never fabricate, but always push real evidence to its strongest defensible angle. Saying "improved performance" when you can confirm "~40% reduction" is an ATS penalty, not integrity. Use confirmed ranges; claim ownership where accurate; convert passive participation into active impact where true.
 - **Tailor per application** — keywords, summary, and bullet order change per JD
 - **Progression matters** — show increasing scope, not just changing companies
-- **Quantify everything possible** — if you can't measure it, question whether it belongs
+- **Quantify everything possible** — if a range is defensible, use it. If no metric exists, ask: "what was the baseline and the end state?" Every bullet without a number is a missed ATS signal.
 
 ---
 
