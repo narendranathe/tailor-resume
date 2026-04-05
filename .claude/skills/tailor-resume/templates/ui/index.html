@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>tailor-resume v2</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  body { font-family: system-ui, -apple-system, sans-serif; max-width: 960px; margin: 0 auto; padding: 32px 20px; color: #1e293b; background: #f8fafc; }
+  h1 { font-size: 1.5rem; font-weight: 700; margin: 0 0 4px; }
+  .subtitle { color: #64748b; font-size: 0.9rem; margin-bottom: 28px; }
+  .card { background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px; margin-bottom: 16px; }
+  label { display: block; font-weight: 600; font-size: 0.85rem; margin-bottom: 6px; color: #374151; }
+  textarea { width: 100%; font-family: monospace; font-size: 0.82rem; border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px; resize: vertical; }
+  textarea:focus, input:focus, select:focus { outline: 2px solid #2563eb; outline-offset: 1px; }
+  input, select { width: 100%; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 0.9rem; }
+  .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+  .field { margin-bottom: 0; }
+  .field label { font-weight: 500; }
+  button { padding: 10px 28px; background: #2563eb; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-size: 0.95rem; font-weight: 600; transition: background 0.15s; }
+  button:hover { background: #1d4ed8; }
+  button:disabled { background: #93c5fd; cursor: not-allowed; }
+  #result { margin-top: 20px; display: none; }
+  .score-badge { font-size: 2.5rem; font-weight: 800; color: #2563eb; line-height: 1; }
+  .score-label { font-size: 0.8rem; color: #64748b; margin-bottom: 16px; }
+  .gap-box { background: #f1f5f9; border-radius: 6px; padding: 14px; font-family: monospace; font-size: 0.8rem; white-space: pre-wrap; max-height: 280px; overflow-y: auto; }
+  .resume-link { display: inline-block; margin-top: 12px; color: #2563eb; font-size: 0.9rem; }
+  .error { background: #fef2f2; border: 1px solid #fca5a5; border-radius: 6px; padding: 12px; color: #b91c1c; font-size: 0.9rem; }
+  .section-title { font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #94a3b8; margin-bottom: 10px; }
+</style>
+</head>
+<body>
+<h1>tailor-resume v2</h1>
+<p class="subtitle">Paste a job description and your resume. Get an ATS-scored, tailored resume in seconds.</p>
+
+<div class="card">
+  <div class="section-title">Auth</div>
+  <div class="field">
+    <label>API Key</label>
+    <input type="password" id="apiKey" value="dev-key" placeholder="dev-key">
+  </div>
+</div>
+
+<div class="card">
+  <div class="section-title">Inputs</div>
+  <label>Job Description</label>
+  <textarea id="jd" rows="7" placeholder="Paste the full job description here..."></textarea>
+
+  <label style="margin-top:14px">Resume / Work History</label>
+  <textarea id="artifact" rows="7" placeholder="Paste your resume text, LinkedIn export, markdown, or LaTeX source..."></textarea>
+
+  <label style="margin-top:14px">Format</label>
+  <select id="format">
+    <option value="blob">blob (free-form text with Company:/Title: headers)</option>
+    <option value="markdown">markdown</option>
+    <option value="latex">latex</option>
+    <option value="linkedin">linkedin PDF export</option>
+  </select>
+</div>
+
+<div class="card">
+  <div class="section-title">Contact Info (injected into resume header)</div>
+  <div class="grid-3">
+    <div class="field"><label>Name</label><input id="name" placeholder="Jane Smith"></div>
+    <div class="field"><label>Email</label><input id="email" placeholder="jane@example.com"></div>
+    <div class="field"><label>Phone</label><input id="phone" placeholder="+1 555-000-0000"></div>
+    <div class="field"><label>LinkedIn URL</label><input id="linkedin" placeholder="https://linkedin.com/in/jane"></div>
+    <div class="field"><label>GitHub URL</label><input id="github" placeholder="https://github.com/jane"></div>
+    <div class="field"><label>Portfolio URL</label><input id="portfolio" placeholder="https://jane.dev"></div>
+  </div>
+</div>
+
+<button id="btn" onclick="generate()">Generate Resume</button>
+
+<div id="result"></div>
+
+<script>
+async function generate() {
+  const btn = document.getElementById("btn");
+  const key = document.getElementById("apiKey").value;
+  const body = {
+    jd_text: document.getElementById("jd").value,
+    artifact_text: document.getElementById("artifact").value,
+    artifact_format: document.getElementById("format").value,
+    name: document.getElementById("name").value,
+    email: document.getElementById("email").value,
+    phone: document.getElementById("phone").value,
+    linkedin: document.getElementById("linkedin").value,
+    github: document.getElementById("github").value,
+    portfolio: document.getElementById("portfolio").value,
+  };
+  const el = document.getElementById("result");
+  btn.disabled = true;
+  btn.textContent = "Generating...";
+  el.style.display = "block";
+  el.innerHTML = "<p style='color:#64748b'>Running pipeline...</p>";
+
+  try {
+    const resp = await fetch("/generate", {
+      method: "POST",
+      headers: {"Content-Type": "application/json", "X-API-Key": key},
+      body: JSON.stringify(body)
+    });
+    const data = await resp.json();
+    if (!resp.ok) {
+      el.innerHTML = `<div class="error">Error ${resp.status}: ${data.detail || JSON.stringify(data)}</div>`;
+      return;
+    }
+    const color = data.ats_score >= 75 ? "#16a34a" : data.ats_score >= 50 ? "#d97706" : "#dc2626";
+    el.innerHTML = `
+      <div class="card">
+        <div style="color:${color}" class="score-badge">${data.ats_score}<span style="font-size:1rem;font-weight:400">/100</span></div>
+        <div class="score-label">ATS Score</div>
+        <strong>Resume written to:</strong> <code>${data.resume_path}</code>
+        <div style="margin-top:14px"><strong>Gap Summary</strong></div>
+        <div class="gap-box">${data.gap_summary.join("\n")}</div>
+      </div>`;
+  } catch(e) {
+    el.innerHTML = `<div class="error">Network error: ${e}</div>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Generate Resume";
+  }
+}
+</script>
+</body>
+</html>
