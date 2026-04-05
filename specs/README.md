@@ -225,3 +225,4 @@ Migration path: The FastAPI backend is designed as the API layer for both the in
 - [ ] GitHub ingestion: OAuth app vs Personal Access Token for private repo access
 - [ ] Admin ticketing: Linear integration vs custom SQLite ticket table for MVP
 - [ ] Anti-bot detection: rule-based (rate + time-of-day) for MVP vs ML anomaly detection for v3
+- [ ] resume-rules submodule: groundwork done - CI updated for submodule support (`submodules: recursive` in ci.yml); repo creation and .gitmodules wiring pending manual step (create `narendranathe/resume-rules` repo first, then `git submodule add https://github.com/narendranathe/resume-rules resume-rules`)
