@@ -1,5 +1,4 @@
 """Tests for pipeline.py — execute_text() and core pipeline logic."""
-import json
 import sys
 from pathlib import Path
 
@@ -80,7 +79,7 @@ class TestExecuteText:
         assert len(result.report.top_missing) <= 2
 
     def test_report_is_gap_report_instance(self, tmp_path):
-        from pipeline import TailorResult, execute_text
+        from pipeline import execute_text
         from resume_types import GapReport
         result = execute_text(JD_TEXT, BLOB_TEXT, output_path=str(tmp_path / "r.tex"))
         assert isinstance(result.report, GapReport)

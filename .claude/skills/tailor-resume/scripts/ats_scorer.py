@@ -5,12 +5,13 @@ Unified ATS scoring facade with three engines:
   method="formula"   (Option B) -- 4-component formula, zero API keys needed
   method="embedding" (Option A) -- cosine similarity via text-embedding-3-small;
                                    falls back to TF-IDF if OPENAI_API_KEY not set
-  method="claude"    (Option C) -- Claude-as-judge; NOT YET IMPLEMENTED (see Issue #63)
+  method="claude"    (Option C) -- Claude-as-judge; lazily imports anthropic;
+                                   falls back to formula if ANTHROPIC_API_KEY not set
 
 Usage:
     from ats_scorer import score, compare
     result = score(jd_text, resume_text, method="formula")
-    # compare() raises NotImplementedError for claude until Issue #63
+    formula_r, claude_r = compare(jd_text, resume_text)  # side-by-side
 """
 from __future__ import annotations
 
@@ -60,10 +61,7 @@ def score(jd: str, resume: str, method: str = "formula") -> ATSScoreResult:
         return _score_embedding(jd, resume)
 
     if method == "claude":
-        raise NotImplementedError(
-            "Claude scoring not yet implemented. Use method='formula' or method='embedding'. "
-            "See Issue #63."
-        )
+        return _score_claude(jd, resume)
 
     raise ValueError(f"Unknown method '{method}'. Use: formula | embedding | claude")
 
@@ -116,11 +114,72 @@ def _score_embedding(jd: str, resume: str) -> ATSScoreResult:
     )
 
 
+def _score_claude(jd: str, resume: str) -> ATSScoreResult:
+    """
+    Option C: Claude-as-judge scoring.
+    Asks claude-haiku-4-5 to return a JSON evaluation of resume-vs-JD fit.
+    Falls back to formula silently if anthropic is not installed or API key absent.
+    """
+    import json as _json
+    import re as _re
+
+    try:
+        import anthropic  # lazy — keeps module importable without the dep
+
+        prompt = (
+            "You are an ATS (Applicant Tracking System) expert. "
+            "Evaluate how well this resume matches the job description.\n\n"
+            f"JOB DESCRIPTION:\n{jd[:1200]}\n\n"
+            f"RESUME:\n{resume[:1200]}\n\n"
+            "Return ONLY valid JSON — no prose, no fences — with exactly these keys:\n"
+            '{"score": <int 0-100>, '
+            '"reasoning": "<one sentence explaining the score>", '
+            '"bullet_scores": [{"bullet": "<text>", "score": <0-3>}], '
+            '"recommendations": ["<action phrase>"]}'
+        )
+
+        client = anthropic.Anthropic()
+        resp = client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=512,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        raw = resp.content[0].text.strip()
+        # Strip accidental markdown fences
+        raw = _re.sub(r"^```[a-z]*\n?", "", raw, flags=_re.MULTILINE)
+        raw = _re.sub(r"\n?```$", "", raw, flags=_re.MULTILINE)
+        parsed = _json.loads(raw.strip())
+
+        score_val = max(0, min(100, int(parsed.get("score", 0))))
+        formula_report = run_analysis(jd, resume, top_n=5)
+
+        return ATSScoreResult(
+            score=score_val,
+            reasoning=str(parsed.get("reasoning", "")),
+            bullet_scores=parsed.get("bullet_scores", []),
+            recommendations=parsed.get("recommendations", formula_report.recommendations),
+            method_used="claude",
+            formula_score=formula_report.ats_score_estimate,
+        )
+
+    except Exception:
+        # No API key, quota exceeded, parse failure — fall back silently
+        fallback = _score_formula(jd, resume)
+        return ATSScoreResult(
+            score=fallback.score,
+            reasoning=fallback.reasoning,
+            bullet_scores=[],
+            recommendations=fallback.recommendations,
+            method_used="claude (formula fallback)",
+            formula_score=fallback.score,
+        )
+
+
 def compare(jd: str, resume: str) -> Tuple[ATSScoreResult, ATSScoreResult]:
     """
-    Returns (claude_result, formula_result) for side-by-side comparison UI.
-    Raises NotImplementedError for claude_result until Issue #63 is implemented.
+    Returns (formula_result, claude_result) for side-by-side comparison UI.
+    claude_result falls back to formula when ANTHROPIC_API_KEY is absent.
     """
     formula_result = score(jd, resume, method="formula")
-    claude_result = score(jd, resume, method="claude")  # raises NotImplementedError until #63
-    return claude_result, formula_result
+    claude_result = score(jd, resume, method="claude")
+    return formula_result, claude_result

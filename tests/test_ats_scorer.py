@@ -1,9 +1,11 @@
-"""Tests for ats_scorer.py -- Option B (formula) and Option A (embedding)."""
+"""Tests for ats_scorer.py -- Option B (formula), Option A (embedding), Option C (claude)."""
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
-from unittest.mock import patch
+from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -91,10 +93,63 @@ def test_unknown_method_raises_value_error():
         score(JD, RESUME, method="invalid_engine")
 
 
-def test_claude_method_raises_not_implemented():
+def test_claude_method_falls_back_to_formula_when_no_key():
+    """Without anthropic or API key, claude method falls back to formula silently."""
     from ats_scorer import score
-    with pytest.raises(NotImplementedError, match="Issue #63"):
-        score(JD, RESUME, method="claude")
+    # Simulate anthropic import failure (no package or no key)
+    with patch.dict("sys.modules", {"anthropic": None}):
+        result = score(JD, RESUME, method="claude")
+    assert isinstance(result, ATSScoreResult)
+    assert 0 <= result.score <= 100
+    assert "fallback" in result.method_used
+
+
+def _make_anthropic_mock(score_val: int = 78) -> MagicMock:
+    """Build a minimal anthropic mock that returns a valid JSON score response."""
+    payload = json.dumps({
+        "score": score_val,
+        "reasoning": "Strong Spark and Kafka alignment with JD.",
+        "bullet_scores": [{"bullet": "Reduced ETL 73%", "score": 3}],
+        "recommendations": ["Add Delta Lake examples", "Mention CI/CD tooling"],
+    })
+    content_block = SimpleNamespace(text=payload)
+    response = SimpleNamespace(content=[content_block])
+    mock_client = MagicMock()
+    mock_client.messages.create.return_value = response
+    mock_anthropic = MagicMock()
+    mock_anthropic.Anthropic.return_value = mock_client
+    return mock_anthropic
+
+
+def test_claude_method_happy_path():
+    from ats_scorer import score
+    mock_anthropic = _make_anthropic_mock(score_val=78)
+    with patch.dict("sys.modules", {"anthropic": mock_anthropic}):
+        result = score(JD, RESUME, method="claude")
+    assert result.method_used == "claude"
+    assert result.score == 78
+    assert "Spark" in result.reasoning
+    assert len(result.bullet_scores) == 1
+    assert result.formula_score is not None
+
+
+def test_claude_method_clamps_score():
+    from ats_scorer import score
+    mock_anthropic = _make_anthropic_mock(score_val=150)  # out of range
+    with patch.dict("sys.modules", {"anthropic": mock_anthropic}):
+        result = score(JD, RESUME, method="claude")
+    assert result.score == 100
+
+
+def test_compare_returns_two_results():
+    from ats_scorer import compare
+    mock_anthropic = _make_anthropic_mock(score_val=82)
+    with patch.dict("sys.modules", {"anthropic": mock_anthropic}):
+        formula_r, claude_r = compare(JD, RESUME)
+    assert formula_r.method_used == "formula"
+    assert claude_r.method_used == "claude"
+    assert 0 <= formula_r.score <= 100
+    assert 0 <= claude_r.score <= 100
 
 
 def test_method_case_insensitive():

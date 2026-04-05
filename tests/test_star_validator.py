@@ -2,13 +2,11 @@
 import sys
 from pathlib import Path
 
-import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent / ".claude/skills/tailor-resume/scripts"))
 
 from star_validator import (
     MAX_BULLET_WORDS,
-    STARScore,
     bullet_quality_score,
     enforce_star,
     score_star,

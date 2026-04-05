@@ -52,6 +52,7 @@ def test_generate_happy_path():
     assert data["resume_path"].endswith(".tex")
     assert "gap_summary" in data
     assert isinstance(data["gap_summary"], list)
+    assert "vault_version" in data  # None when no token, key must exist
 
 
 def test_generate_missing_jd_returns_422():
@@ -99,4 +100,77 @@ def test_score_missing_resume_returns_422():
 def test_score_bad_api_key_returns_401():
     payload = {"jd_text": _JD, "resume_text": "Spark Kafka Airflow"}
     resp = client.post("/score", json=payload, headers={"X-API-Key": "bad"})
+    assert resp.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# /cover-letter
+# ---------------------------------------------------------------------------
+
+
+def test_cover_letter_happy_path():
+    payload = {
+        "jd_text": _JD,
+        "artifact_text": _BLOB,
+        "artifact_format": "blob",
+        "name": "Jane Smith",
+        "email": "jane@example.com",
+        "method": "template",
+    }
+    resp = client.post("/cover-letter", json=payload, headers=HEADERS)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "txt" in data
+    assert isinstance(data["txt"], str)
+    assert len(data["txt"]) > 10
+    assert "word_count" in data
+    assert isinstance(data["word_count"], int)
+    assert "method_used" in data
+
+
+def test_cover_letter_missing_jd_returns_422():
+    resp = client.post("/cover-letter", json={"artifact_text": _BLOB}, headers=HEADERS)
+    assert resp.status_code == 422
+
+
+def test_cover_letter_bad_api_key_returns_401():
+    payload = {"jd_text": _JD, "artifact_text": _BLOB}
+    resp = client.post("/cover-letter", json=payload, headers={"X-API-Key": "nope"})
+    assert resp.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# /ingest/github
+# ---------------------------------------------------------------------------
+
+
+def test_ingest_github_happy_path():
+    from unittest.mock import patch
+    fake_projects = [
+        {"name": "autoapply-ai", "description": "AI job tool", "bullets": [], "tools": ["Python"],
+         "url": "https://github.com/n/autoapply-ai", "stars": 42, "source": "github"}
+    ]
+    with patch("api_server.fetch_user_repos", return_value=fake_projects):
+        resp = client.post(
+            "/ingest/github",
+            json={"username": "narendranathe", "limit": 5},
+            headers=HEADERS,
+        )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["count"] == 1
+    assert data["projects"][0]["name"] == "autoapply-ai"
+
+
+def test_ingest_github_missing_username_returns_422():
+    resp = client.post("/ingest/github", json={"username": ""}, headers=HEADERS)
+    assert resp.status_code == 422
+
+
+def test_ingest_github_bad_api_key_returns_401():
+    resp = client.post(
+        "/ingest/github",
+        json={"username": "someone"},
+        headers={"X-API-Key": "bad"},
+    )
     assert resp.status_code == 401
