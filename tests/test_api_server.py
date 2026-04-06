@@ -204,3 +204,141 @@ def test_compare_bad_api_key_returns_401():
     payload = {"jd_text": _JD, "resume_text": "Spark Kafka"}
     resp = client.post("/compare", json=payload, headers={"X-API-Key": "bad"})
     assert resp.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# _compile_pdf helper + /generate pdf_path
+# ---------------------------------------------------------------------------
+
+
+def test_generate_pdf_path_null_when_pdflatex_absent():
+    """When pdflatex is not on PATH, pdf_path and compile_warning are both null."""
+    from unittest.mock import patch
+    payload = {
+        "jd_text": _JD,
+        "artifact_text": _BLOB,
+        "artifact_format": "blob",
+        "name": "Jane Smith",
+        "email": "jane@example.com",
+    }
+    with patch("api_server.shutil.which", return_value=None):
+        resp = client.post("/generate", json=payload, headers=HEADERS)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "pdf_path" in data
+    assert data["pdf_path"] is None
+    assert data["compile_warning"] is None
+
+
+def test_generate_pdf_path_returned_on_success():
+    """When pdflatex succeeds, pdf_path ends with .pdf."""
+    from pathlib import Path
+    from unittest.mock import MagicMock, patch
+    payload = {
+        "jd_text": _JD,
+        "artifact_text": _BLOB,
+        "artifact_format": "blob",
+    }
+    mock_proc = MagicMock()
+    mock_proc.returncode = 0
+
+    def fake_which(cmd):
+        return "/usr/bin/pdflatex" if cmd == "pdflatex" else None
+
+    def fake_run(args, **kwargs):
+        # Create a fake .pdf file next to the .tex
+        tex = args[-1]
+        pdf = tex.replace(".tex", ".pdf")
+        Path(pdf).write_text("fake pdf content")
+        return mock_proc
+
+    with patch("api_server.shutil.which", side_effect=fake_which):
+        with patch("api_server.subprocess.run", side_effect=fake_run):
+            resp = client.post("/generate", json=payload, headers=HEADERS)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["pdf_path"] is not None
+    assert data["pdf_path"].endswith(".pdf")
+    assert data["compile_warning"] is None
+
+
+def test_generate_compile_warning_on_pdflatex_failure():
+    """When pdflatex exits non-zero, pdf_path is null and compile_warning is set."""
+    from unittest.mock import MagicMock, patch
+    payload = {"jd_text": _JD, "artifact_text": _BLOB, "artifact_format": "blob"}
+    mock_proc = MagicMock()
+    mock_proc.returncode = 1
+    mock_proc.stderr = b"LaTeX error: undefined control sequence"
+
+    with patch("api_server.shutil.which", return_value="/usr/bin/pdflatex"):
+        with patch("api_server.subprocess.run", return_value=mock_proc):
+            resp = client.post("/generate", json=payload, headers=HEADERS)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["pdf_path"] is None
+    assert data["compile_warning"] is not None
+    assert "pdflatex exit 1" in data["compile_warning"]
+
+
+def test_generate_compile_pdf_false_skips_compilation():
+    """compile_pdf=False skips pdflatex even if it would be available."""
+    from unittest.mock import patch
+    payload = {
+        "jd_text": _JD,
+        "artifact_text": _BLOB,
+        "artifact_format": "blob",
+        "compile_pdf": False,
+    }
+    with patch("api_server.subprocess.run") as mock_run:
+        resp = client.post("/generate", json=payload, headers=HEADERS)
+    mock_run.assert_not_called()
+    data = resp.json()
+    assert data["pdf_path"] is None
+
+
+# ---------------------------------------------------------------------------
+# /cover-letter pdf_path
+# ---------------------------------------------------------------------------
+
+
+def test_cover_letter_pdf_path_null_when_pdflatex_absent():
+    from unittest.mock import patch
+    payload = {
+        "jd_text": _JD,
+        "artifact_text": _BLOB,
+        "artifact_format": "blob",
+        "method": "template",
+    }
+    with patch("api_server.shutil.which", return_value=None):
+        resp = client.post("/cover-letter", json=payload, headers=HEADERS)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "pdf_path" in data
+    assert data["pdf_path"] is None
+
+
+def test_cover_letter_pdf_path_returned_on_success():
+    from pathlib import Path
+    from unittest.mock import MagicMock, patch
+    payload = {
+        "jd_text": _JD,
+        "artifact_text": _BLOB,
+        "artifact_format": "blob",
+        "method": "template",
+    }
+    mock_proc = MagicMock()
+    mock_proc.returncode = 0
+
+    def fake_run(args, **kwargs):
+        tex = args[-1]
+        pdf = tex.replace(".tex", ".pdf")
+        Path(pdf).write_text("fake pdf content")
+        return mock_proc
+
+    with patch("api_server.shutil.which", return_value="/usr/bin/pdflatex"):
+        with patch("api_server.subprocess.run", side_effect=fake_run):
+            resp = client.post("/cover-letter", json=payload, headers=HEADERS)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["pdf_path"] is not None
+    assert data["pdf_path"].endswith(".pdf")

@@ -18,9 +18,12 @@ Endpoints:
 from __future__ import annotations
 
 import os
+import shutil
+import subprocess
 import sys
 from dataclasses import asdict
 from pathlib import Path
+from typing import Optional
 
 from fastapi import FastAPI, Header, HTTPException
 from fastapi.responses import HTMLResponse
@@ -40,6 +43,37 @@ from vault_client import push_version  # noqa: E402
 app = FastAPI(title="tailor-resume", version="2.0.0")
 
 _UI_TEMPLATE = Path(__file__).parent.parent / "templates" / "ui" / "index.html"
+
+
+def _compile_pdf(tex_path: str) -> tuple[Optional[str], Optional[str]]:
+    """
+    Compile a .tex file to PDF using pdflatex.
+
+    Returns (pdf_path, None) on success.
+    Returns (None, None) when pdflatex is not on PATH.
+    Returns (None, warning_str) on compilation failure.
+    Never raises.
+    """
+    binary = os.getenv("PDFLATEX_PATH") or shutil.which("pdflatex")
+    if not binary:
+        return None, None
+    out_dir = str(Path(tex_path).parent)
+    try:
+        result = subprocess.run(
+            [binary, "-interaction=nonstopmode", "-halt-on-error",
+             f"-output-directory={out_dir}", tex_path],
+            capture_output=True,
+            timeout=60,
+        )
+        pdf_path = tex_path.replace(".tex", ".pdf")
+        if result.returncode == 0 and Path(pdf_path).exists():
+            return pdf_path, None
+        stderr = result.stderr.decode(errors="replace")[-300:]
+        return None, f"pdflatex exit {result.returncode}: {stderr}"
+    except subprocess.TimeoutExpired:
+        return None, "pdflatex timed out after 60s"
+    except Exception as exc:
+        return None, str(exc)
 
 
 def _check_api_key(x_api_key: str) -> None:
@@ -64,6 +98,7 @@ class GenerateRequest(BaseModel):
     github: str = ""
     portfolio: str = ""
     user_id: str = ""  # for vault scoping; falls back to email then "anonymous"
+    compile_pdf: bool = True  # set False to skip pdflatex and return .tex only
 
 
 class ScoreRequest(BaseModel):
@@ -144,9 +179,17 @@ def generate(req: GenerateRequest, x_api_key: str = Header(default="")):
         except Exception:
             pass
 
+        pdf_path, compile_warning = (
+            _compile_pdf(result.output_path)
+            if req.compile_pdf and result.output_path
+            else (None, None)
+        )
+
         return {
             "ats_score": result.ats_score,
             "resume_path": result.output_path,
+            "pdf_path": pdf_path,
+            "compile_warning": compile_warning,
             "gap_summary": result.gap_summary,
             "vault_version": vault_entry.version_tag if vault_entry else None,
             "warnings": [],
@@ -234,12 +277,20 @@ def cover_letter(req: CoverLetterRequest, x_api_key: str = Header(default="")):
             jd_text=req.jd_text,
             method=req.method,
         )
+        # Write .tex to temp file so pdflatex can compile it
+        import tempfile as _tf
+        _tex_tmp = _tf.NamedTemporaryFile(suffix=".tex", delete=False)
+        Path(_tex_tmp.name).write_text(result.tex, encoding="utf-8")
+        _tex_tmp.close()
+        cl_pdf_path, _ = _compile_pdf(_tex_tmp.name)
+
         return {
             "txt": result.txt,
             "tex": result.tex,
             "word_count": result.word_count,
             "method_used": result.method_used,
             "docx_path": result.docx_path,
+            "pdf_path": cl_pdf_path,
         }
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
