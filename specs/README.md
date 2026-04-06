@@ -398,7 +398,7 @@ README fetching requires one extra HTTP call per repo. In an API context where t
 - [x] Browser UI Cover Letter tab: implemented
 - [x] Browser UI GitHub Projects tab: implemented
 - [x] `/compare` endpoint: implemented
-- [ ] PDF compilation: `pdflatex` subprocess in `/generate` when on PATH; return `pdf_path`
+- [x] PDF compilation: `_compile_pdf` helper in `api_server.py`; `/generate` returns `pdf_path`+`compile_warning`; `/cover-letter` returns `pdf_path`; `compile_pdf=False` opt-out; `PDFLATEX_PATH` env override (7b481c7)
 - [x] Vault PDF: GitHub Actions workflow added to `narendranathe/resume-vault` — triggers on push to `vault/**`, compiles `.tex` → `.pdf`, commits PDF back to same branch
 - [x] resume-rules submodule: repo created (`narendranathe/resume-rules`), seeded with SKILL.md, REFERENCE.md, EXAMPLES.md, star_validator.py, text_utils.py; wired as submodule at `resume-rules/` in tailor-resume-work (ceb91b3)
 
