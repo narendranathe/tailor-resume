@@ -1,0 +1,3 @@
+[submodule "resume-rules"]
+	path = resume-rules
+	url = https://github.com/narendranathe/resume-rules.git
