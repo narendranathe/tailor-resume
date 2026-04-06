@@ -9,10 +9,11 @@ OUT         := out
 MCP_SERVER  := $(SCRIPTS)/mcp_server.py
 MCP_GLOBAL  := $(HOME)/.claude/.mcp.json
 
-.PHONY: setup setup-all demo test test-cov lint render mcp-serve mcp-install-global sync-global serve clean help
+.PHONY: setup setup-all install-global demo test test-cov lint render mcp-serve mcp-install-global sync-global serve clean help
 
 help:
 	@echo "Available targets:"
+	@echo "  install-global       Copy skill + register MCP + install optional deps (run once after clone)"
 	@echo "  setup                Install core dev dependencies (pytest, ruff)"
 	@echo "  setup-all            Install core + optional deps (pinecone, openai, mcp)"
 	@echo "  demo                 Run the full pipeline on sample fixtures -> $(OUT)/resume.tex"
@@ -69,6 +70,16 @@ render: $(OUT)/resume.tex
 mcp-serve:
 	@echo "Starting tailor-resume MCP server (stdio). Press Ctrl+C to stop."
 	$(PYTHON) $(MCP_SERVER)
+
+install-global: mcp-install-global
+	@echo "Copying skill to $(HOME)/.claude/skills/ ..."
+	mkdir -p $(HOME)/.claude/skills
+	cp -r .claude/skills/tailor-resume $(HOME)/.claude/skills/tailor-resume
+	@echo "Installing optional deps (pinecone, openai, mcp) ..."
+	$(PYTHON) -m pip install -r requirements-optional.txt
+	@echo ""
+	@echo "[OK] tailor-resume is now available globally."
+	@echo "     Restart Claude Code to activate /tailor-resume and the MCP tools."
 
 mcp-install-global:
 	$(PYTHON) scripts/install_mcp_global.py

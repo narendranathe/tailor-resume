@@ -1,26 +1,102 @@
 # tailor-resume
 
+[![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://tailor-resume-ai.streamlit.app/)
+[![CI](https://github.com/narendranathe/tailor-resume/actions/workflows/ci.yml/badge.svg)](https://github.com/narendranathe/tailor-resume/actions/workflows/ci.yml)
+
 ATS-optimized, recruiter-ready, single-page resume tailoring — powered by Claude Code.
 
 Paste a job description and your work history. Get a tailored LaTeX resume with quantified bullets, skills gap analysis, and ATS score — in minutes. No fabrication. No templates with your name baked in.
 
 ---
 
+## Project Status
+
+### Tier 1 — Zero infrastructure, immediate reach
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| Core pipeline (parse → gap → render) | ✅ Done | stdlib only, 190 tests |
+| Claude Code skill (`/tailor-resume`) | ✅ Done | per-project + global install |
+| MCP plugin (4 typed tools) | ✅ Done | stdio, auto-registered |
+| ATS Relevance Gate (score bands + honest ceiling) | ✅ Done | ≥80→97+, 60-79→90+, <50→decline |
+| `make install-global` | ✅ Done | one-command global install |
+| Auto-invoke from natural language | ✅ Done | CLAUDE.md hook |
+| **Streamlit web app** (3-tab browser UI) | ✅ Done | profile→tailor→download + SQLite save/load sidebar |
+| **PyPI package** (`pip install tailor-resume`) | ✅ Done | `pyproject.toml` + `tailor_resume/` package + Python API |
+| **Docker image** (`docker run narendranathe/tailor-resume`) | 📋 [#33](https://github.com/narendranathe/tailor-resume/issues/33) | bundles Python + pdflatex + deps; one command → PDF |
+| Streamlit Community Cloud deploy | ✅ Live | https://tailor-resume-ai.streamlit.app/ |
+| Fly.io MCP deploy | 📋 Pending | `fly deploy` — needs `FLY_API_TOKEN` secret in GitHub |
+| PyPI publish | 📋 Pending | configure trusted publisher, push `v0.1.0` tag |
+
+### Tier 2 — Hosted web app (1–2 weeks)
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| **Hosted MCP server** (HTTP/SSE, Fly.io) | ✅ Done | server.py + Dockerfile + fly.toml + CI deploy |
+| **FastAPI backend** (`/tailor` + `/profile` + `/health`) | 📋 [#34](https://github.com/narendranathe/tailor-resume/issues/34) | Clerk auth · Fly.io · TRACER for all integrations |
+| **React web app** (gap chart + ATS score + download) | 📋 [#35](https://github.com/narendranathe/tailor-resume/issues/35) | Vite + Recharts · Vercel deploy · Clerk auth |
+
+### Tier 3 — Integrations (high leverage)
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| **autoapply-ai integration** | 📋 [#36](https://github.com/narendranathe/tailor-resume/issues/36) | high-score job → "Tailor Resume" in sidepanel → .tex in vault |
+| **Chrome extension button** (LinkedIn/Greenhouse/Lever) | 📋 [#37](https://github.com/narendranathe/tailor-resume/issues/37) | content script → scrapes JD → calls API → ATS + download |
+| **JobScout webhook** | 📋 [#38](https://github.com/narendranathe/tailor-resume/issues/38) | dream job alert fires → auto-tailor + .tex link in Discord/Telegram |
+
+### Tier 4 — Multi-user SaaS
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| **Profile persistence** (Supabase + Pinecone) | 📋 [#39](https://github.com/narendranathe/tailor-resume/issues/39) | upload once, all future JDs pull from RAG store |
+| **Cover letter companion** | 📋 [#40](https://github.com/narendranathe/tailor-resume/issues/40) | same pipeline, 1-page LaTeX cover letter output |
+| **Subscription tiers** (Free + Pro via Stripe) | 📋 [#41](https://github.com/narendranathe/tailor-resume/issues/41) | 5/mo free · unlimited + Pinecone + cover letters = Pro |
+
+---
+
+## Scaling Roadmap
+
+```
+Week 1-2  (done) Streamlit app + PyPI package      → any Python dev or browser user
+Week 3-4  (done) Hosted MCP (Fly.io)               → any Claude Code user globally, zero install
+Month 2          FastAPI+React web app + Clerk/Supabase → true multi-user product
+                 Docker image                        → zero-dep single-command PDF
+Month 2-3        autoapply-ai integration            → job appears → resume auto-generated
+                 Chrome ext "Tailor Resume" button   → works on LinkedIn/Greenhouse/Lever
+Month 3+         JobScout webhook                   → score threshold → auto-tailor + attach PDF
+                 Cover letter companion              → same pipeline, different template
+                 Profile persistence (Supabase)     → upload once, reuse forever
+                 Subscription tiers (Stripe)        → Free + Pro tiers
+```
+
+---
+
 ## Install
 
+**Local (use only from this repo):**
 ```bash
-git clone https://github.com/narendranathe/tailor-resume.git
-cd tailor-resume
+git clone https://github.com/narendranathe/tailor-resume ~/projects/tailor-resume
+cd ~/projects/tailor-resume
 pip install -r requirements.txt
+python -m pytest tests/ -v   # 190 tests, no API keys required
 ```
 
-Verify everything works on the included sample data:
-
+**Via pip (no clone needed):**
 ```bash
-python -m pytest tests/ -v
+pip install tailor-resume
+tailor-resume --jd jd.txt --artifact resume.md --name "Jane Smith" --email "jane@example.com"
 ```
 
-162 tests should pass. No API keys required.
+**Global (use `/tailor-resume` and MCP tools from any project — recommended):**
+```bash
+git clone https://github.com/narendranathe/tailor-resume ~/projects/tailor-resume
+cd ~/projects/tailor-resume
+pip install -r requirements.txt
+make install-global           # copies skill, registers MCP, installs optional deps
+# Restart Claude Code, then type /tailor-resume from any project
+```
+
+`make install-global` is idempotent — safe to run again after `git pull` to pick up skill updates.
 
 ---
 
@@ -34,6 +110,34 @@ This repo ships with both a **skill** (slash command) and an **MCP plugin** (str
 | How Claude uses it | Reads instructions, runs shell commands | Calls typed Python functions directly |
 | Input | Paste text in chat | Structured JSON arguments |
 | Best for | Interactive, conversational tailoring | Programmatic use, scripting, agents |
+
+---
+
+## Python API (after `pip install tailor-resume`)
+
+```python
+from tailor_resume import extract_profile, analyze_gap, render_latex, run_pipeline
+
+# Parse a resume
+profile = extract_profile(open("resume.md").read(), format="markdown")
+
+# Score against a JD
+gap = analyze_gap(open("jd.txt").read(), open("resume.md").read())
+print(f"ATS score: {gap.ats_score_estimate}/100")
+print("Top gaps:", [g.category for g in gap.top_missing[:3]])
+
+# Full pipeline in one call
+result = run_pipeline(
+    jd_text=open("jd.txt").read(),
+    artifact_text=open("resume.md").read(),
+    artifact_format="markdown",
+    output_path="out/resume.tex",
+    name="Jane Smith",
+    email="jane@example.com",
+    linkedin="https://linkedin.com/in/jane",
+)
+print(f"Wrote {result['output_path']} · ATS: {result['ats_score']}/100")
+```
 
 ---
 
@@ -54,23 +158,42 @@ The skill appears in Claude's available skills list immediately.
 
 ### Global install (use from any project)
 
-Copy the skill folder into Claude Code's global skills directory:
-
-**macOS / Linux:**
 ```bash
-cp -r .claude/skills/tailor-resume ~/.claude/skills/
+make install-global
 ```
 
-**Windows (Git Bash):**
-```bash
-cp -r .claude/skills/tailor-resume "$USERPROFILE/.claude/skills/"
+This single command:
+1. Registers the MCP server in `~/.claude/.mcp.json`
+2. Copies the skill to `~/.claude/skills/tailor-resume/`
+3. Installs optional deps (`pinecone`, `openai`) for RAG + semantic search
+
+Restart Claude Code once. The skill and MCP tools are then available in every project.
+
+### Auto-invoke from natural language (optional)
+
+Add this section to your global `~/.claude/CLAUDE.md` so Claude invokes the skill automatically when you mention resume work — no slash command needed:
+
+```markdown
+## Auto-invoke skills
+
+When the user expresses any of the following intents, immediately invoke the `/tailor-resume` skill
+without waiting to be asked — do not respond conversationally first:
+
+- Editing, updating, or improving a resume or CV
+- Tailoring a resume to a job description or role
+- Skills gap analysis against a job posting
+- Generating a LaTeX or PDF resume
+- Extracting achievements from LinkedIn, GitHub, or a work history blob
+- Aligning experience to a job description
+
+The skill is at `~/.claude/skills/tailor-resume/`. Invoke it with `/tailor-resume`.
 ```
 
-After copying, the skill is available in every Claude Code session.
+After adding this, saying **"edit my resume"** or **"tailor this to the JD"** in any Claude Code session triggers the skill immediately.
 
 ### Use the skill
 
-Once activated, invoke the skill from any Claude Code chat:
+Or invoke explicitly from any Claude Code chat:
 
 ```
 /tailor-resume
@@ -212,6 +335,60 @@ ATS tip: verify your resume is machine-readable by selecting and copying text fr
 
 ---
 
+## Option C: Streamlit web app (browser-based, no Claude Code required)
+
+[![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://tailor-resume-ai.streamlit.app/)
+
+A browser-based UI — paste your resume and JD, get an ATS score, gap analysis, and a downloadable `.tex` file. No Claude Code or terminal required.
+
+**Run locally:**
+```bash
+pip install streamlit
+streamlit run streamlit_app/app.py
+```
+
+**Deploy to Streamlit Community Cloud (free):**
+1. Fork this repo to your GitHub account
+2. Go to [share.streamlit.io](https://share.streamlit.io) → New app
+3. Set main file: `streamlit_app/app.py`
+4. Click Deploy
+
+**The 3-tab interface:**
+
+| Tab | What it does |
+|-----|-------------|
+| 📄 Profile | Paste resume/blob → parse into structured profile; save/load via sidebar |
+| 🎯 Tailor | Paste JD → ATS score + gap table + tailored `.tex` |
+| ⬇️ Download | Download `resume_tailored.tex` → upload to Overleaf for PDF |
+
+---
+
+## Option D: Hosted MCP server (zero-install, remote tools)
+
+Register the hosted MCP server in Claude Code and the four tools are available from any project — no local clone, no Python install:
+
+```json
+{
+  "mcpServers": {
+    "tailor-resume": {
+      "url": "https://tailor-resume-mcp.fly.dev/mcp"
+    }
+  }
+}
+```
+
+Add this to `~/.claude/settings.json` under `mcpServers`. The same four tools (`extract_profile`, `analyze_gap`, `render_latex`, `run_pipeline`) work exactly as the local MCP plugin but call the remote server.
+
+**Self-host on Fly.io:**
+```bash
+fly auth login
+fly launch --no-deploy   # reads fly.toml
+fly secrets set ANTHROPIC_API_KEY=...  # if needed
+fly deploy
+```
+
+---
+
 ## Use the scripts directly (no Claude required)
 
 The scripts under `.claude/skills/tailor-resume/scripts/` are standalone Python — core pipeline uses stdlib only.
@@ -325,8 +502,20 @@ tailor-resume/
 │   ├── test_latex_renderer.py     — renderer unit tests
 │   ├── test_rag_store.py          — SQLite backend tests
 │   └── test_cli.py                — CLI entry point tests
+├── streamlit_app/
+│   ├── app.py                     — Streamlit entrypoint (3-tab layout + sidebar)
+│   └── tabs/
+│       ├── profile_tab.py         — parse resume text into structured profile
+│       ├── tailor_tab.py          — JD gap analysis + ATS score + LaTeX render
+│       └── download_tab.py        — download tailored .tex
+├── server.py                      — FastMCP HTTP/SSE entrypoint (Fly.io deploy)
+├── Dockerfile                     — python:3.12-slim for Fly.io
+├── fly.toml                       — Fly.io config (tailor-resume-mcp, ord region)
+├── .github/workflows/
+│   ├── ci.yml                     — lint + test on push
+│   └── deploy-mcp.yml             — auto-deploy to Fly.io on main
 ├── Makefile                       — setup/demo/test/lint/render/clean targets
-├── requirements.txt               — pytest, ruff (core scripts use stdlib only)
+├── requirements.txt               — streamlit, pytest, ruff (core scripts use stdlib only)
 ├── requirements-optional.txt      — pinecone-client, openai, mcp
 └── .env.example                   — documented env vars with safe defaults
 ```

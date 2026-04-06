@@ -3,6 +3,8 @@ import json
 import sys
 from pathlib import Path
 
+import pytest
+
 
 sys.path.insert(0, str(Path(__file__).parent.parent / ".claude/skills/tailor-resume/scripts"))
 
@@ -186,3 +188,131 @@ class TestRagStoreCli:
         out = capsys.readouterr().out
         # Should print "Stored user IDs:" header
         assert "user" in out.lower() or out == ""
+
+
+# ---------------------------------------------------------------------------
+# cli.py — pipeline orchestrator (run_pipeline + main)
+# ---------------------------------------------------------------------------
+class TestCliPipeline:
+    def test_run_pipeline_single_blob_creates_output(self, tmp_path, capsys):
+        import cli
+        out = tmp_path / "resume.tex"
+        cli.run_pipeline(
+            jd_path=str(JD_FILE),
+            artifacts=[(str(BLOB_FILE), "blob")],
+            output_path=str(out),
+            header={"name": "Jane Smith", "email": "jane@example.com",
+                    "phone": "", "linkedin": "", "github": "", "portfolio": ""},
+            template_path=str(TEMPLATE_FILE),
+        )
+        assert out.exists()
+        assert "ATS Score" in capsys.readouterr().out
+
+    def test_run_pipeline_merges_multiple_artifacts(self, tmp_path):
+        import cli
+        out = tmp_path / "resume.tex"
+        cli.run_pipeline(
+            jd_path=str(JD_FILE),
+            artifacts=[(str(BLOB_FILE), "blob"), (str(BLOB_FILE), "markdown")],
+            output_path=str(out),
+            header={"name": "Jane", "email": "j@j.com",
+                    "phone": "", "linkedin": "", "github": "", "portfolio": ""},
+            template_path=str(TEMPLATE_FILE),
+        )
+        assert out.exists()
+
+    def test_run_pipeline_markdown_artifact(self, tmp_path):
+        import cli
+        md_file = tmp_path / "resume.md"
+        md_file.write_text(
+            "## Experience\n**Data Engineer** | Acme | 2022-Present\n- Built pipelines\n",
+            encoding="utf-8",
+        )
+        out = tmp_path / "resume.tex"
+        cli.run_pipeline(
+            jd_path=str(JD_FILE),
+            artifacts=[(str(md_file), "markdown")],
+            output_path=str(out),
+            header={"name": "X", "email": "x@x.com",
+                    "phone": "", "linkedin": "", "github": "", "portfolio": ""},
+            template_path=str(TEMPLATE_FILE),
+        )
+        assert out.exists()
+
+    def test_run_pipeline_prints_gap_signals(self, tmp_path, capsys):
+        import cli
+        out = tmp_path / "resume.tex"
+        cli.run_pipeline(
+            jd_path=str(JD_FILE),
+            artifacts=[(str(BLOB_FILE), "blob")],
+            output_path=str(out),
+            header={"name": "T", "email": "t@t.com",
+                    "phone": "", "linkedin": "", "github": "", "portfolio": ""},
+            template_path=str(TEMPLATE_FILE),
+            top_gaps=2,
+        )
+        out_text = capsys.readouterr().out
+        assert "Gap Analysis" in out_text
+        assert "Resume written to" in out_text
+
+    def test_main_single_artifact(self, monkeypatch, tmp_path):
+        import cli
+        output = tmp_path / "resume.tex"
+        monkeypatch.setattr(sys, "argv", [
+            "cli.py",
+            "--jd", str(JD_FILE),
+            "--artifact", f"{BLOB_FILE}:blob",
+            "--output", str(output),
+            "--template", str(TEMPLATE_FILE),
+            "--name", "Test User",
+            "--email", "test@example.com",
+        ])
+        cli.main()
+        assert output.exists()
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="Windows drive letters contain ':' which conflicts with path:format separator")
+    def test_main_artifact_without_format_defaults_to_blob(self, monkeypatch, tmp_path):
+        import cli
+        output = tmp_path / "resume.tex"
+        monkeypatch.setattr(sys, "argv", [
+            "cli.py",
+            "--jd", str(JD_FILE),
+            "--artifact", str(BLOB_FILE),  # no :format suffix
+            "--output", str(output),
+            "--template", str(TEMPLATE_FILE),
+        ])
+        cli.main()
+        assert output.exists()
+
+    def test_main_invalid_format_exits(self, monkeypatch, tmp_path):
+        import cli
+        output = tmp_path / "resume.tex"
+        monkeypatch.setattr(sys, "argv", [
+            "cli.py",
+            "--jd", str(JD_FILE),
+            "--artifact", f"{BLOB_FILE}:bogus_format",
+            "--output", str(output),
+            "--template", str(TEMPLATE_FILE),
+        ])
+        with pytest.raises(SystemExit):
+            cli.main()
+
+    def test_main_all_header_fields(self, monkeypatch, tmp_path):
+        import cli
+        output = tmp_path / "resume.tex"
+        monkeypatch.setattr(sys, "argv", [
+            "cli.py",
+            "--jd", str(JD_FILE),
+            "--artifact", f"{BLOB_FILE}:blob",
+            "--output", str(output),
+            "--template", str(TEMPLATE_FILE),
+            "--name", "Jane Smith",
+            "--email", "jane@example.com",
+            "--phone", "555-1234",
+            "--linkedin", "https://linkedin.com/in/jane",
+            "--github", "https://github.com/jane",
+            "--portfolio", "https://jane.io",
+            "--top-gaps", "3",
+        ])
+        cli.main()
+        assert output.exists()

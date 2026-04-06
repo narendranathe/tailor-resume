@@ -1,0 +1,46 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tailor-resume"
+version = "0.1.0"
+description = "ATS-optimized, recruiter-ready resume tailoring from the command line"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.11"
+authors = [{ name = "Narendranath Edara", email = "edara.narendranath@gmail.com" }]
+keywords = ["resume", "ATS", "job search", "LaTeX", "career"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Topic :: Office/Business",
+    "Topic :: Text Processing :: Markup :: LaTeX",
+]
+
+# Core pipeline uses stdlib only — no required deps.
+# Optional extras unlock cloud features.
+dependencies = []
+
+[project.optional-dependencies]
+rag = ["pinecone>=3.0", "openai>=1.0"]
+mcp = ["mcp>=1.0"]
+streamlit = ["streamlit>=1.32.0"]
+all = ["pinecone>=3.0", "openai>=1.0", "mcp>=1.0", "streamlit>=1.32.0"]
+
+[project.scripts]
+tailor-resume = "tailor_resume.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/narendranathe/tailor-resume"
+Repository = "https://github.com/narendranathe/tailor-resume"
+Issues = "https://github.com/narendranathe/tailor-resume/issues"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["tailor_resume*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"

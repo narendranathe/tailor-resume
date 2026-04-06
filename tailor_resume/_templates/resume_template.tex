@@ -1,0 +1,191 @@
+%-------------------------
+% Resume Template — tailor-resume skill
+% Header PII injected at runtime via placeholder tokens (double braces).
+% Body sections show realistic example content — replace with your own.
+% Based on: https://github.com/sb2nov/resume  (MIT License)
+%-------------------------
+
+\documentclass[letterpaper,11pt]{article}
+
+\usepackage{latexsym}
+\usepackage[empty]{fullpage}
+\usepackage{titlesec}
+\usepackage{marvosym}
+\usepackage[usenames,dvipsnames]{color}
+\usepackage{verbatim}
+\usepackage{enumitem}
+\usepackage[hidelinks]{hyperref}
+\usepackage{fancyhdr}
+\usepackage[english]{babel}
+\usepackage{tabularx}
+\input{glyphtounicode}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyfoot{}
+\renewcommand{\headrulewidth}{0pt}
+\renewcommand{\footrulewidth}{0pt}
+
+% Margins — tight for single page
+\addtolength{\oddsidemargin}{-0.5in}
+\addtolength{\evensidemargin}{-0.5in}
+\addtolength{\textwidth}{1in}
+\addtolength{\topmargin}{-.7in}
+\addtolength{\textheight}{1.4in}
+\setlength{\parskip}{0pt}
+
+\urlstyle{same}
+\raggedbottom
+\raggedright
+\setlength{\tabcolsep}{0in}
+
+% Section formatting
+\titleformat{\section}{
+  \vspace{-4pt}\scshape\raggedright\large
+}{}{0em}{}[\color{black}\titlerule \vspace{-5pt}]
+
+\pdfgentounicode=1
+
+%-------------------------
+% Custom commands
+\newcommand{\resumeItem}[1]{
+  \item\small{
+    {#1 \vspace{-2pt}}
+  }
+}
+
+\newcommand{\resumeSubheading}[4]{
+  \vspace{-2pt}\item
+    \begin{tabular*}{0.97\textwidth}[t]{l@{\extracolsep{\fill}}r}
+      \textbf{#1} & #2 \\
+      \textit{\small#3} & \textit{\small #4} \\
+    \end{tabular*}\vspace{-7pt}
+}
+
+\newcommand{\resumeSubSubheading}[2]{
+    \item
+    \begin{tabular*}{0.97\textwidth}{l@{\extracolsep{\fill}}r}
+      \textit{\small#1} & \textit{\small #2} \\
+    \end{tabular*}\vspace{-7pt}
+}
+
+\newcommand{\resumeProjectHeading}[2]{
+    \item
+    \begin{tabular*}{0.97\textwidth}{l@{\extracolsep{\fill}}r}
+      \small#1 & #2 \\
+    \end{tabular*}\vspace{-7pt}
+}
+
+\newcommand{\resumeSubItem}[1]{\resumeItem{#1}\vspace{-4pt}}
+
+\renewcommand\labelitemii{$\vcenter{\hbox{\tiny$\bullet$}}$}
+
+\newcommand{\resumeSubHeadingListStart}{\begin{itemize}[leftmargin=0.15in, label={}]}
+\newcommand{\resumeSubHeadingListEnd}{\end{itemize}}
+\newcommand{\resumeItemListStart}{\begin{itemize}}
+\newcommand{\resumeItemListEnd}{\end{itemize}\vspace{-5pt}}
+
+%-------------------------------------------
+\begin{document}
+
+%----------HEADING----------
+% Replace {{NAME}}, {{PHONE}}, {{EMAIL}}, {{LINKEDIN_URL}}/{{LINKEDIN_DISPLAY}},
+% {{PORTFOLIO_URL}}/{{PORTFOLIO_DISPLAY}} at runtime — never hardcode PII here.
+\begin{center}
+    \textbf{\Huge \scshape {{NAME}}} \\ \vspace{1pt}
+    \small {{PHONE}} $|$
+    \href{mailto:{{EMAIL}}}{\underline{{{EMAIL}}}} $|$
+    \href{{{LINKEDIN_URL}}}{\underline{{{LINKEDIN_DISPLAY}}}} $|$
+    \href{{{PORTFOLIO_URL}}}{\underline{{{PORTFOLIO_DISPLAY}}}}
+\end{center}
+
+
+%-----------EDUCATION-----------
+\section{Education}
+  \resumeSubHeadingListStart
+    \resumeSubheading
+      {University Name}{City, ST}
+      {Degree Program; GPA: X.X/4.0}{Mon. YYYY -- Mon. YYYY}
+    % Add a second entry if applicable:
+    % \resumeSubheading
+    %   {Community College}{City, ST}
+    %   {Associate of Science in Computer Science}{Aug. 2018 -- May 2020}
+  \resumeSubHeadingListEnd
+
+
+%-----------EXPERIENCE-----------
+\section{Experience}
+  \resumeSubHeadingListStart
+
+    % Most recent role first
+    \resumeSubheading
+      {Job Title}{Mon. YYYY -- Present}
+      {Company Name}{City, ST}
+      \resumeItemListStart
+        \resumeItem{Accomplished [X] as measured by [Y] by doing [Z] — lead with your strongest impact bullet.}
+        \resumeItem{Reduced [metric] by [X\%] (baseline \textrightarrow{} outcome) by [specific technique or system change].}
+        \resumeItem{Built [system/tool] handling [scale: rows/day, users, TPS] with [reliability/SLA outcome].}
+        \resumeItem{Owned [CI/CD, orchestration, data quality, etc.] end-to-end, cutting [time/cost/incidents] by [X].}
+      \resumeItemListEnd
+
+    \resumeSubheading
+      {Previous Job Title}{Mon. YYYY -- Mon. YYYY}
+      {Previous Company}{City, ST}
+      \resumeItemListStart
+        \resumeItem{Engineered [pipeline/platform/model] achieving [outcome] at [scale] using [tools].}
+        \resumeItem{Migrated [system A] to [system B], improving [latency/cost/reliability] by [metric].}
+        \resumeItem{Collaborated cross-functionally with [teams] to deliver [outcome] within [timeframe].}
+      \resumeItemListEnd
+
+    % Optional: earlier role
+    % \resumeSubheading
+    %   {Earlier Title}{Mon. YYYY -- Mon. YYYY}
+    %   {Earlier Company}{City, Country}
+    %   \resumeItemListStart
+    %     \resumeItem{Built [X] that contributed to [business outcome].}
+    %   \resumeItemListEnd
+
+  \resumeSubHeadingListEnd
+
+
+%-----------PROJECTS-----------
+\section{Projects}
+    \resumeSubHeadingListStart
+      \resumeProjectHeading
+          {\textbf{Project Name} $|$ \emph{Python, FastAPI, PostgreSQL, Docker}}{YYYY}
+          \resumeItemListStart
+            \resumeItem{Built [what] serving [scale] with [latency/throughput] using [architecture/approach].}
+            \resumeItem{Implemented [observability/CI/testing] reducing [failures/incidents/cost] by [metric].}
+          \resumeItemListEnd
+      \resumeProjectHeading
+          {\textbf{Second Project} $|$ \emph{Spark, Kafka, Airflow, MLflow}}{YYYY}
+          \resumeItemListStart
+            \resumeItem{Designed [architecture decision] for [use case], saving \$[X]/month vs [alternative].}
+            \resumeItem{Achieved [data quality/reliability outcome] by implementing [data contracts/schema enforcement].}
+          \resumeItemListEnd
+    \resumeSubHeadingListEnd
+
+
+%-----------CERTIFICATIONS \& PUBLICATIONS-----------
+\section{Certifications \& Publications}
+ \begin{itemize}[leftmargin=0.15in, label={}]
+    \small{\item{
+     \textbf{Cert Name}{: Issuing Body $|$}
+     % Add publications with DOI link if applicable:
+     % \textbf{Publication}{: Title -- \href{https://doi.org/xxx}{\underline{DOI}}}
+    }}
+ \end{itemize}
+
+
+%-----------TECHNICAL SKILLS-----------
+\section{Technical Skills}
+ \begin{itemize}[leftmargin=0.15in, label={}]
+    \small{\item{
+     \textbf{Languages \& ML}{: Python, SQL, Bash, Pytest, MLflow, Airflow, LangChain, RAG} \\
+     \textbf{Data \& Cloud}{: Spark, Kafka, Databricks, Delta Lake, PostgreSQL, ETL/ELT, Azure, AWS, Docker, Kubernetes} \\
+     \textbf{Tools}{: FastAPI, Streamlit, Elasticsearch, Power BI, DAX, Git, CI/CD, Prometheus, Grafana} \\
+    }}
+ \end{itemize}
+
+%-------------------------------------------
+\end{document}
