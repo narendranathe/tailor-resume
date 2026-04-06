@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 from typing import List, Optional, Tuple
 
@@ -1009,6 +1010,169 @@ def _extract_pdf_text_pdfminer(data: bytes) -> str:
     return "\n".join(parts)
 
 
+def _build_profile_from_claude_json(data: dict, source: str) -> Profile:
+    """Reconstruct a Profile from Claude's structured JSON output.
+
+    Shared by _parse_with_claude() and _parse_pdf_with_claude_document_api()
+    so both functions produce structurally identical profiles.
+    """
+    profile = Profile()
+
+    for r in data.get("experience", []):
+        bullets = [
+            Bullet(
+                text=b,
+                metrics=extract_metrics(b),
+                tools=extract_tools(b),
+                evidence_source=source,
+                confidence=score_confidence(b),
+            )
+            for b in r.get("bullets", [])
+            if isinstance(b, str) and b.strip()
+        ]
+        profile.experience.append(Role(
+            title=r.get("title", ""),
+            company=r.get("company", ""),
+            start=r.get("start", ""),
+            end=r.get("end", ""),
+            location=r.get("location", ""),
+            bullets=bullets,
+        ))
+
+    for p in data.get("projects", []):
+        bullets = [
+            Bullet(
+                text=b,
+                metrics=extract_metrics(b),
+                tools=extract_tools(b),
+                evidence_source=source,
+                confidence=score_confidence(b),
+            )
+            for b in p.get("bullets", [])
+            if isinstance(b, str) and b.strip()
+        ]
+        profile.projects.append(Project(
+            name=p.get("name", ""),
+            tech=p.get("tech", []),
+            bullets=bullets,
+        ))
+
+    profile.skills = _dedupe([s for s in data.get("skills", []) if isinstance(s, str)])
+    profile.education = [
+        {
+            "institution": e.get("institution", ""),
+            "degree": e.get("degree", ""),
+            "dates": e.get("dates", ""),
+            "location": e.get("location", ""),
+        }
+        for e in data.get("education", [])
+    ]
+    profile.certifications = [c for c in data.get("certifications", []) if isinstance(c, str)]
+
+    return profile
+
+
+_CLAUDE_JSON_SCHEMA_PROMPT = """\
+Return ONLY a JSON object — no markdown, no explanation — with this exact schema:
+{
+  "experience": [
+    {
+      "title": "Job title",
+      "company": "Company name (reconstruct split words)",
+      "start": "Month YYYY or YYYY",
+      "end": "Month YYYY or YYYY or Present",
+      "location": "City, State",
+      "bullets": ["bullet text 1", "bullet text 2"]
+    }
+  ],
+  "projects": [
+    {
+      "name": "Project name",
+      "tech": ["tech1", "tech2"],
+      "bullets": ["bullet text 1"]
+    }
+  ],
+  "skills": ["skill1", "skill2"],
+  "education": [
+    {
+      "institution": "University name",
+      "degree": "Degree and field",
+      "dates": "YYYY – YYYY",
+      "location": ""
+    }
+  ],
+  "certifications": ["cert1"]
+}"""
+
+
+def _parse_pdf_with_claude_document_api(file_bytes: bytes, source: str) -> Optional[Profile]:
+    """Send raw PDF bytes to Claude via the native document API.
+
+    Claude reads the PDF directly — no text extraction step required.
+    Handles scanned/image-only PDFs, multi-column layouts, and garbled CMR
+    fonts that defeat text extraction heuristics.
+
+    Returns a Profile on success, or None on any failure (missing key,
+    import error, API error, JSON parse error). Never raises — caller
+    falls through to the text-extraction tiers when None is returned.
+
+    Requires: ANTHROPIC_API_KEY env var + anthropic>=0.27.
+    Override model with TAILOR_PDF_MODEL env var (default: claude-haiku-4-5-20251001).
+    """
+    import base64
+
+    key = os.environ.get("ANTHROPIC_API_KEY")
+    if not key:
+        return None
+
+    try:
+        import anthropic as _anthropic
+        # Document content blocks require anthropic>=0.27
+        ver = tuple(int(x) for x in _anthropic.__version__.split(".")[:2])
+        if ver < (0, 27):
+            return None
+    except ImportError:
+        return None
+
+    try:
+        model = os.environ.get("TAILOR_PDF_MODEL", "claude-haiku-4-5-20251001")
+        client = _anthropic.Anthropic(api_key=key)
+        response = client.messages.create(
+            model=model,
+            max_tokens=4096,
+            messages=[{
+                "role": "user",
+                "content": [
+                    {
+                        "type": "document",
+                        "source": {
+                            "type": "base64",
+                            "media_type": "application/pdf",
+                            "data": base64.b64encode(file_bytes).decode("ascii"),
+                        },
+                    },
+                    {
+                        "type": "text",
+                        "text": (
+                            "You are a resume parser. Extract all resume information from this PDF.\n"
+                            "PDF may be multi-column, scanned, or use non-standard fonts — "
+                            "read the visual layout directly.\n\n"
+                            + _CLAUDE_JSON_SCHEMA_PROMPT
+                        ),
+                    },
+                ],
+            }],
+        )
+        raw = response.content[0].text.strip()
+        if raw.startswith("```"):
+            raw = re.sub(r"^```[a-z]*\n?", "", raw)
+            raw = re.sub(r"\n?```$", "", raw)
+        data = json.loads(raw[raw.find("{"):raw.rfind("}") + 1])
+        return _build_profile_from_claude_json(data, source)
+    except Exception:
+        return None
+
+
 def _parse_with_claude(text: str, source: str) -> Profile:
     """
     Use Claude to parse raw extracted resume text into a structured Profile.
@@ -1085,63 +1249,9 @@ RESUME TEXT:
             raw = re.sub(r"^```[a-z]*\n?", "", raw)
             raw = re.sub(r"\n?```$", "", raw)
         data = json.loads(raw)
+        return _build_profile_from_claude_json(data, source)
     except Exception:
         return _parse_plain_resume_text(text, source=source)
-
-    profile = Profile()
-
-    for r in data.get("experience", []):
-        bullets = [
-            Bullet(
-                text=b,
-                metrics=extract_metrics(b),
-                tools=extract_tools(b),
-                evidence_source=source,
-                confidence=score_confidence(b),
-            )
-            for b in r.get("bullets", [])
-            if isinstance(b, str) and b.strip()
-        ]
-        profile.experience.append(Role(
-            title=r.get("title", ""),
-            company=r.get("company", ""),
-            start=r.get("start", ""),
-            end=r.get("end", ""),
-            location=r.get("location", ""),
-            bullets=bullets,
-        ))
-
-    for p in data.get("projects", []):
-        bullets = [
-            Bullet(
-                text=b,
-                metrics=extract_metrics(b),
-                tools=extract_tools(b),
-                evidence_source=source,
-                confidence=score_confidence(b),
-            )
-            for b in p.get("bullets", [])
-            if isinstance(b, str) and b.strip()
-        ]
-        profile.projects.append(Project(
-            name=p.get("name", ""),
-            tech=p.get("tech", []),
-            bullets=bullets,
-        ))
-
-    profile.skills = _dedupe([s for s in data.get("skills", []) if isinstance(s, str)])
-    profile.education = [
-        {
-            "institution": e.get("institution", ""),
-            "degree": e.get("degree", ""),
-            "dates": e.get("dates", ""),
-            "location": e.get("location", ""),
-        }
-        for e in data.get("education", [])
-    ]
-    profile.certifications = [c for c in data.get("certifications", []) if isinstance(c, str)]
-
-    return profile
 
 
 def _enrich_profile_with_claude(profile: Profile, source: str = "") -> Profile:
@@ -1272,15 +1382,24 @@ def parse_pdf(file_bytes: bytes, source: str = "pdf_resume") -> Profile:
     """
     Extract text from a PDF file and parse it into a Profile.
 
-    Text extraction tier (first success wins):
+    Parsing tiers (first success wins):
+        0. Claude document API — native PDF reading, no text extraction needed.
+           Handles scanned PDFs, multi-column layouts, garbled CMR fonts.
+           Requires ANTHROPIC_API_KEY + anthropic>=0.27. Falls through if unavailable.
         1. pdfminer.six — reads ToUnicode CMap; best for LaTeX/CMR fonts
         2. pypdf         — fast; good for Word-generated PDFs
         3. stdlib        — no dependencies; last resort
 
-    Parsing tier:
-        - regex-based _parse_plain_resume_text (deterministic, 0 API calls)
-        - Call _enrich_profile_with_claude(profile) separately for LLM enrichment
+    When text extraction succeeds and ANTHROPIC_API_KEY is set, routes through
+    _parse_with_claude() to handle garbled extraction artifacts. Falls back to
+    the regex parser otherwise (offline, zero API calls).
     """
+    # Tier 0: Claude native PDF document understanding (handles scanned + complex layouts)
+    if os.environ.get("ANTHROPIC_API_KEY"):
+        result = _parse_pdf_with_claude_document_api(file_bytes, source)
+        if result is not None:
+            return result
+
     text = ""
 
     # Tier 1: pdfminer.six (best Unicode fidelity for LaTeX CMR fonts)
@@ -1305,10 +1424,15 @@ def parse_pdf(file_bytes: bytes, source: str = "pdf_resume") -> Profile:
         text = _extract_pdf_text_stdlib(file_bytes)
 
     if not text.strip():
+        if os.environ.get("ANTHROPIC_API_KEY"):
+            raise ValueError(
+                "No text could be extracted from this PDF, and Claude document parsing also failed. "
+                "The file may be corrupted or use an unsupported format."
+            )
         raise ValueError(
-            "No text could be extracted from this PDF. "
-            "It may be a scanned/image-only PDF. "
-            "Try copy-pasting the text content instead."
+            "No text could be extracted from this PDF — it may be a scanned/image-only PDF. "
+            "Set ANTHROPIC_API_KEY to enable AI-powered parsing that handles scanned documents, "
+            "or try copy-pasting the text content instead."
         )
 
     # Apply OT1 artifact normalization for all tiers (pypdf and stdlib both
@@ -1318,6 +1442,9 @@ def parse_pdf(file_bytes: bytes, source: str = "pdf_resume") -> Profile:
     if "\\resumeSubheading" in text or "\\resumeItem" in text:
         return parse_latex(text, source=source)
 
+    # Route through Claude when key is available — fixes garbled extraction artifacts
+    if os.environ.get("ANTHROPIC_API_KEY"):
+        return _parse_with_claude(text, source=source)
     return _parse_plain_resume_text(text, source=source)
 
 
