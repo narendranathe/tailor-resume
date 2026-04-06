@@ -393,10 +393,65 @@ README fetching requires one extra HTTP call per repo. In an API context where t
 
 ### Open decisions (to be resolved in next wave)
 
-- [ ] Company name extraction in vault push: use `cover_letter_renderer._extract_company_from_jd()` instead of `jd_text.split()[0]`
-- [ ] `/generate` should accept `user_id` as a request field and thread it to `execute_text()` and `push_version()`
-- [ ] Browser UI: add a "Cover Letter" tab to `templates/ui/index.html`
-- [ ] Browser UI: add a "GitHub Projects" tab to trigger `/ingest/github` and preview extracted bullets
-- [ ] `/compare` endpoint: expose `compare(jd, resume)` as a POST endpoint for the side-by-side ATS panel
-- [ ] PDF compilation: add `pdflatex` subprocess step to `/generate` when `pdflatex` is on PATH; return `pdf_path` in response
-- [ ] Vault PDF: GitHub Actions workflow on `vault/*` branch pushes to compile `.tex` → `.pdf` automatically
+- [x] Company name extraction in vault push: fixed — `_extract_company_from_jd()` now used
+- [x] `/generate` user_id field: added, threads to push_version (priority: user_id > email > anonymous)
+- [x] Browser UI Cover Letter tab: implemented
+- [x] Browser UI GitHub Projects tab: implemented
+- [x] `/compare` endpoint: implemented
+- [ ] PDF compilation: `pdflatex` subprocess in `/generate` when on PATH; return `pdf_path`
+- [ ] Vault PDF: GitHub Actions workflow on `vault/*` branches to compile `.tex` → `.pdf`
+
+---
+
+## 2026-04-05 — v2 Wave 4: /compare endpoint + UI tabs + quality fixes (60d2a07)
+
+### Hooks audit (performed this session)
+
+Active Claude Code hooks verified:
+| Hook | Trigger | Action | Status |
+|------|---------|--------|--------|
+| `sync_skills.py` | PostToolUse Edit\|Write | Auto-syncs `.claude/skills/<name>/` to `~/.claude/skills/<name>/` | Working |
+| `block-dangerous-git.sh` | PreToolUse Bash | Blocks force-push, rm -rf root, reset --hard | Active |
+| `pre-action-gate.sh` | PreToolUse all | Checks gates.json for block/warn patterns | Active — 6 gates |
+| `session-start.sh` | SessionStart | Loads primer.md into context | Active |
+| `session-end.sh` | SessionEnd | Rewrites primer.md with session summary; promotes repeated failures to gates | Active |
+| `post-compact.sh` | PostCompact | (runs after context compaction) | Active |
+
+Gates active: `no-force-push` (block), `no-rm-rf-root` (block), `no-credentials-in-files` (block), `no-git-reset-hard` (warn), `no-drop-database` (block), `no-delete-migrations` (warn). No auto-promoted failures in `failures.json`.
+
+### Issue: /compare endpoint
+
+**Decision: `/compare` reuses the existing `ScoreRequest` model (jd_text + resume_text).**
+Why: The compare operation scores the same inputs with two engines — no new fields needed. Sharing the model avoids a proliferating family of near-identical Pydantic classes.
+
+**Response shape:**
+```json
+{
+  "formula": {"score": 71, "method_used": "formula", "reasoning": "...", "recommendations": [...]},
+  "claude":  {"score": 82, "method_used": "claude", "reasoning": "...", "recommendations": [...],
+              "bullet_scores": [...], "formula_score": 71}
+}
+```
+The `claude.formula_score` field is the formula result embedded in the Claude ATSScoreResult — so the UI can always show the baseline without making two separate requests.
+
+### Issue: Vault push company extraction fix
+
+**Decision: Replaced `jd_text.split()[0][:30]` with `_extract_company_from_jd(jd_text)` from `cover_letter_renderer`.**
+Why: The rough `split()[0]` approach returned words like "Senior" or "We" when the JD starts with a seniority level or intro phrase. `_extract_company_from_jd()` uses regex patterns to find company names after "at", "join", or at line start followed by "is hiring/looking/seeking".
+
+**Decision: `user_id` priority chain: `req.user_id > req.email > "anonymous"`.**
+This lets callers pass an explicit opaque user ID (e.g., a Clerk user ID from autoapply-ai) without coupling to email. Email remains the fallback for simple internal tool usage where no auth system exists.
+
+### Issue: Browser UI tab navigation
+
+**Decision: Four tabs — Resume, Cover Letter, ATS Compare, GitHub Projects — all sharing the top Inputs card.**
+Why shared inputs: JD text and resume artifact are common to all operations. Duplicating them in each tab would create sync issues if the user edits one copy. Single source of truth at the top; tabs switch the action, not the inputs.
+
+**Decision: `escHtml()` utility in JS for all user-facing dynamic content.**
+Why: The result area renders untrusted content from the API (JD text, reasoning strings, project descriptions). All dynamic content is escaped to prevent accidental XSS from special characters in resume text.
+
+**Decision: GitHub Projects tab defaults `fetch_readmes=false`.**
+Already captured in Wave 3 decisions. UI exposes it as an opt-in checkbox with "(slower)" label so users understand the tradeoff.
+
+**Decision: Cover Letter "Copy plain text" button uses `navigator.clipboard.writeText()`.**
+Why: The most common use case is copy-paste into a job portal text box. A dedicated copy button eliminates the need to select-all in the text area. Shows "Copied!" for 1.5s then resets — standard UX pattern.
