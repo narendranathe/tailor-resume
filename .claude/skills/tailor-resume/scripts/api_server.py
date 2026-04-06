@@ -30,6 +30,7 @@ _SCRIPTS = Path(__file__).parent
 if str(_SCRIPTS) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS))
 
+from cover_letter_renderer import _extract_company_from_jd  # noqa: E402
 from cover_letter_renderer import build_cover_letter  # noqa: E402
 from github_ingester import fetch_user_repos  # noqa: E402
 from jd_gap_analyzer import run_analysis  # noqa: E402
@@ -62,6 +63,7 @@ class GenerateRequest(BaseModel):
     linkedin: str = ""
     github: str = ""
     portfolio: str = ""
+    user_id: str = ""  # for vault scoping; falls back to email then "anonymous"
 
 
 class ScoreRequest(BaseModel):
@@ -130,9 +132,9 @@ def generate(req: GenerateRequest, x_api_key: str = Header(default="")):
         vault_entry = None
         try:
             tex_content = Path(result.output_path).read_text(encoding="utf-8")
-            company = req.jd_text.split()[0][:30] if req.jd_text else "Unknown"
+            company = _extract_company_from_jd(req.jd_text) if req.jd_text else "Unknown"
             vault_entry = push_version(
-                user_id=req.email or "anonymous",
+                user_id=req.user_id or req.email or "anonymous",
                 company=company,
                 role="Resume",
                 tex_content=tex_content,
@@ -165,6 +167,37 @@ def score(req: ScoreRequest, x_api_key: str = Header(default="")):
     try:
         report = run_analysis(req.jd_text, req.resume_text, top_n=req.top_n)
         return {"ats_score": report.ats_score_estimate, "gap_report": asdict(report)}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.post("/compare")
+def compare(req: ScoreRequest, x_api_key: str = Header(default="")):
+    """Side-by-side ATS comparison: formula engine vs Claude-as-judge."""
+    _check_api_key(x_api_key)
+    if not req.jd_text.strip():
+        raise HTTPException(status_code=422, detail="jd_text must not be empty")
+    if not req.resume_text.strip():
+        raise HTTPException(status_code=422, detail="resume_text must not be empty")
+    try:
+        from ats_scorer import compare as _compare  # noqa: E402
+        formula_r, claude_r = _compare(req.jd_text, req.resume_text)
+        return {
+            "formula": {
+                "score": formula_r.score,
+                "method_used": formula_r.method_used,
+                "reasoning": formula_r.reasoning,
+                "recommendations": formula_r.recommendations,
+            },
+            "claude": {
+                "score": claude_r.score,
+                "method_used": claude_r.method_used,
+                "reasoning": claude_r.reasoning,
+                "recommendations": claude_r.recommendations,
+                "bullet_scores": claude_r.bullet_scores,
+                "formula_score": claude_r.formula_score,
+            },
+        }
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
 

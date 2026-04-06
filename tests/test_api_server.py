@@ -174,3 +174,33 @@ def test_ingest_github_bad_api_key_returns_401():
         headers={"X-API-Key": "bad"},
     )
     assert resp.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# /compare
+# ---------------------------------------------------------------------------
+
+
+def test_compare_happy_path():
+    payload = {"jd_text": _JD, "resume_text": "Spark Kafka Airflow pipelines. Reduced ETL 73%."}
+    resp = client.post("/compare", json=payload, headers=HEADERS)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "formula" in data
+    assert "claude" in data
+    assert 0 <= data["formula"]["score"] <= 100
+    assert 0 <= data["claude"]["score"] <= 100
+    assert data["formula"]["method_used"] == "formula"
+    assert isinstance(data["formula"]["recommendations"], list)
+    assert isinstance(data["claude"]["recommendations"], list)
+
+
+def test_compare_missing_jd_returns_422():
+    resp = client.post("/compare", json={"resume_text": "Spark"}, headers=HEADERS)
+    assert resp.status_code == 422
+
+
+def test_compare_bad_api_key_returns_401():
+    payload = {"jd_text": _JD, "resume_text": "Spark Kafka"}
+    resp = client.post("/compare", json=payload, headers={"X-API-Key": "bad"})
+    assert resp.status_code == 401
