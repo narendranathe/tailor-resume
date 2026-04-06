@@ -87,15 +87,49 @@
 
 ---
 
-## 5. Pipeline & CLI
+## 5. Pipeline & CLI (updated)
 
 | Canonical Term | Definition | Aliases to Avoid |
 |---|---|---|
-| **Pipeline** | The end-to-end flow: parse Artifacts → merge Profile → run gap analysis → render LaTeX. Orchestrated by `run_pipeline()`. | *workflow*, *process*, *run* |
-| **run\_pipeline()** | The Python function that executes the full Pipeline from a list of Artifacts and a JD path. | *execute pipeline*, *run*, *process* |
-| **CLI** | `cli.py` — the command-line entry point (`tailor-resume` command). Accepts `--artifact`, `--jd`, `--output`, header flags. | *command line*, *CLI tool*, *script* |
+| **Pipeline** | The end-to-end flow: parse Artifacts → merge Profile → run gap analysis → render LaTeX. Orchestrated by `pipeline.py`. | *workflow*, *process*, *run* |
+| **TailorConfig** | Dataclass holding all pipeline inputs: artifact paths, JD path, header fields, template path. Passed to `execute()` or `execute_text()`. | *config*, *pipeline config*, *settings* |
+| **TailorResult** | Dataclass holding pipeline outputs: `.tex` string, GapReport, ATS Score Estimate. Returned by `execute()` and `execute_text()`. | *result*, *output*, *pipeline output* |
+| **execute()** | File-based pipeline entry point in `pipeline.py`. Takes a TailorConfig with file paths; used by CLI. | *run pipeline*, *file pipeline* |
+| **execute\_text()** | Text-based pipeline entry point in `pipeline.py`. Takes raw text strings instead of file paths; used by MCP tools and the web API. | *text pipeline*, *API pipeline* |
+| **CLI** | `cli.py` — the command-line entry point (`tailor-resume` command). Accepts `--artifact`, `--jd`, `--output`, header flags. Delegates to `execute()`. | *command line*, *CLI tool*, *script* |
 | **`--artifact PATH:FORMAT`** | Repeatable CLI flag specifying one Artifact. The `:FORMAT` suffix declares its Format. | *input flag*, *artifact flag* |
 | **Header Injection** | Passing `--name`, `--email`, `--phone`, `--linkedin`, `--github`, `--portfolio` at CLI runtime to fill contact Placeholders without embedding PII in files. | *PII injection*, *contact injection*, *header fields* |
+
+---
+
+## 5b. Parser & Store Packages (new)
+
+| Canonical Term | Definition | Aliases to Avoid |
+|---|---|---|
+| **parsers/** | The package of format-specific extractor modules split from the monolithic `profile_extractor.py`. Contains `latex_parser`, `pdf_extractor`, `plain_parser`, `markdown_parser`, `docx_extractor`, `normalizer`. | *parsers package*, *extractors*, *parser modules* |
+| **plain\_parser** | Module handling plain-text and blob extraction (`_parse_plain_resume_text()`). | *text parser*, *blob parser* |
+| **normalizer** | Module containing `_normalize_ot1_artifacts()` and shared text normalization utilities. | *normalizer module*, *OT1 module* |
+| **profile\_extractor.py (shim)** | Compatibility re-export shim at the scripts root that re-exports everything from `parsers/`. Exists so existing imports don't break. Not the implementation. | *profile extractor*, *main parser* |
+| **stores/** | The package of RAG profile storage implementations: `PineconeStore`, `SQLiteStore`, and the `get_store()` factory. | *stores package*, *storage package* |
+| **EmbedFn** | Type alias `Callable[[str], List[float]]` injected into stores at construction. Prevents dimension mismatch (OpenAI 1536-dim vs TF-IDF 128-dim) corrupting cosine scores. | *embedder*, *embedding function*, *embed callable* |
+| **PineconeStore** | Vector store backed by Pinecone. Active when `PINECONE_API_KEY` is set. | *Pinecone store*, *cloud vector store* |
+| **SQLiteStore** | Local vector store backed by SQLite. Used when `PINECONE_API_KEY` is absent. | *SQLite store*, *local store* |
+| **get\_store()** | Factory that returns `PineconeStore` if `PINECONE_API_KEY` is set, else `SQLiteStore`. | *store factory*, *get store* |
+| **rag\_store.py (shim)** | Compatibility re-export shim at the scripts root that re-exports from `stores/`. Not the implementation. | *rag store*, *store module* |
+| **Storage Fallback Pattern** | Convention used across storage (`db/supabase.py`) and usage metering (`middleware/usage.py`): Supabase when env vars are set, SQLite at `~/.tailor_resume/` otherwise. New stores must follow this pattern. | *fallback pattern*, *store fallback* |
+
+---
+
+## 5c. Web Backend & MCP (new)
+
+| Canonical Term | Definition | Aliases to Avoid |
+|---|---|---|
+| **Web Backend** | FastAPI app in `web_app/backend/`. Uses the `create_app()` factory. Clerk RS256 JWT auth. Deployed to `tailor-resume-api.fly.dev`. | *backend*, *API server*, *web API* |
+| **create\_app()** | FastAPI application factory in `web_app/backend/app/main.py`. Mounts `/api/v1` routes + CORS. Mirrors the autoapply-ai pattern. | *app factory*, *FastAPI factory* |
+| **MCP Server** | `mcp_server.py` — exposes 4 typed MCP tools over stdio. Registered globally via `make mcp-install-global`. Delegates to `execute_text()`. | *MCP*, *MCP tools*, *stdio server* |
+| **Usage Metering** | Middleware (`middleware/usage.py`) enforcing per-user plan limits: Free (5 tailors/month), Pro (unlimited). Checks before and increments after each `/resume/tailor` call. | *usage limit*, *rate limit*, *plan enforcement* |
+| **ATS Score Band** | Thresholds applied after scoring: `≥0.80` → Strong match (proceed), `0.60–0.79` → Good match (proceed with caveats), `0.50–0.59` → Borderline, `<0.50` → Decline (no `.tex` produced). | *score band*, *match band*, *relevance band* |
+| **Regression Tests** | Test files named `_regression` (e.g., `test_profile_extractor_regression.py`) that capture behavioral quirks as characterization tests. Change only deliberately — they document intentional oddities. | *characterization tests*, *regression suite* |
 
 ---
 
@@ -182,4 +216,4 @@
 
 ---
 
-*Last updated: 2026-03-23. Merge new findings by running `/ubiquitous-language` in Claude Code.*
+*Last updated: 2026-04-06. Merge new findings by running `/ubiquitous-language` in Claude Code. Auto-invoked at session start and after auto-compact via hooks.*
