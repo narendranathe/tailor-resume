@@ -1,27 +1,15 @@
 %-------------------------
-% Cover Letter Template — tailor-resume skill
-% Companion to resume_template.tex — identical header style and ATS-safe formatting.
-% Header PII injected at runtime via placeholder tokens (double braces).
-% Body paragraphs are parameterized — never hardcode personal content here.
-%
-% Paragraph guidance (fill via {{PARAGRAPH_N}} at render time):
-%   PARAGRAPH_1 — Hook: why this specific role/company (mirror JD language)
-%   PARAGRAPH_2 — Evidence: 2–3 quantified achievements directly relevant to JD
-%   PARAGRAPH_3 — Forward-looking: how your skills drive their specific goals; call to action
-%
-% Note: Cover letters are human-read, not ATS-parsed — but clean formatting
-% still matters for emailed/uploaded submissions. No text boxes, no images.
+% Cover Letter Template -- tailor-resume skill
+% Header PII injected at runtime via {{PLACEHOLDER}} tokens.
+% Shares font and margin definitions with resume_template.tex.
 %-------------------------
 
 \documentclass[letterpaper,11pt]{article}
 
 \usepackage{latexsym}
 \usepackage[empty]{fullpage}
-\usepackage{titlesec}
-\usepackage{marvosym}
 \usepackage[usenames,dvipsnames]{color}
 \usepackage{verbatim}
-\usepackage{enumitem}
 \usepackage[hidelinks]{hyperref}
 \usepackage{fancyhdr}
 \usepackage[english]{babel}
@@ -34,86 +22,38 @@
 \renewcommand{\headrulewidth}{0pt}
 \renewcommand{\footrulewidth}{0pt}
 
-% Margins — match resume_template.tex exactly
+% Margins -- same as resume template
 \addtolength{\oddsidemargin}{-0.5in}
 \addtolength{\evensidemargin}{-0.5in}
 \addtolength{\textwidth}{1in}
-\addtolength{\topmargin}{-.7in}
-\addtolength{\textheight}{1.4in}
+\addtolength{\topmargin}{-.5in}
+\addtolength{\textheight}{1.0in}
 \setlength{\parskip}{6pt}
 
 \urlstyle{same}
-\raggedbottom
-\raggedright
-\setlength{\tabcolsep}{0in}
 
 \pdfgentounicode=1
 
-%-------------------------------------------
 \begin{document}
 
-%----------HEADING----------
-% Identical to resume_template.tex — same contact block.
-% Replace {{NAME}}, {{PHONE}}, {{EMAIL}}, {{LINKEDIN_URL}}/{{LINKEDIN_DISPLAY}},
-% {{PORTFOLIO_URL}}/{{PORTFOLIO_DISPLAY}} at runtime — never hardcode PII here.
+%----------HEADER----------
 \begin{center}
-    \textbf{\Huge \scshape {{NAME}}} \ \vspace{1pt}
-    \small {{PHONE}} $|$
-    \href{mailto:{{EMAIL}}}{\underline{{{EMAIL}}}} $|$
-    \href{{{LINKEDIN_URL}}}{\underline{{{LINKEDIN_DISPLAY}}}} $|$
-    \href{{{PORTFOLIO_URL}}}{\underline{{{PORTFOLIO_DISPLAY}}}}
+    {\Large \textbf{{{NAME}}}} \\[4pt]
+    \small
+    {{EMAIL}}
+    \hspace{6pt}$|$\hspace{6pt}
+    {{PHONE}}
+    \hspace{6pt}$|$\hspace{6pt}
+    \href{{{LINKEDIN}}}{{{LINKEDIN_TEXT}}}
 \end{center}
 
-\vspace{4pt}
+\vspace{8pt}
 
-%----------DATE----------
-{{DATE}}
+%----------BODY----------
+\noindent {{PARA_ONE}}
 
-\vspace{4pt}
+\vspace{8pt}
 
-%----------RECIPIENT----------
-% Runtime-injected: {{HIRING_MANAGER_NAME}}, {{HIRING_MANAGER_TITLE}},
-% {{COMPANY_NAME}}, {{COMPANY_ADDRESS}}
-% If hiring manager name is unknown, substitute "Hiring Manager" as fallback.
-{{HIRING_MANAGER_NAME}} \
-{{HIRING_MANAGER_TITLE}} \
-{{COMPANY_NAME}} \
-{{COMPANY_ADDRESS}}
+\noindent {{PARA_TWO}}
 
-\vspace{4pt}
-
-%----------SALUTATION----------
-Dear {{HIRING_MANAGER_NAME}},
-
-\vspace{2pt}
-
-%----------BODY — PARAGRAPH 1 (HOOK)----------
-% Why this specific role at this specific company.
-% Mirror the JD's language. Reference a company initiative, mission, or recent news.
-% 3–5 sentences. End with a clear statement of applying for {{ROLE_TITLE}}.
-{{PARAGRAPH_1}}
-
-%----------BODY — PARAGRAPH 2 (EVIDENCE)----------
-% 2–3 quantified achievements from your resume that directly address the JD's top MQs.
-% Bullet formula: Accomplished [X] as measured by [Y] by doing [Z].
-% Tie each achievement to a specific need in the job description.
-% 4–6 sentences.
-{{PARAGRAPH_2}}
-
-%----------BODY — PARAGRAPH 3 (FORWARD-LOOKING + CALL TO ACTION)----------
-% How your trajectory positions you to drive their specific goals.
-% End with a polite, confident call to action (interview request).
-% 2–4 sentences.
-{{PARAGRAPH_3}}
-
-\vspace{6pt}
-
-%----------CLOSING----------
-Sincerely,
-
-\vspace{24pt}
-
-{{NAME}}
-
-%-------------------------------------------
 \end{document}

@@ -9,7 +9,7 @@ pypdf>=4.0
 python-docx>=1.0
 
 # LLM-based enrichment (Claude for bullet quality + user preference feedback)
-anthropic>=0.25
+anthropic>=0.27
 
 # LLM-free PDF extraction — reads ToUnicode CMap for correct Unicode (LaTeX CMR fonts)
 pdfminer.six>=20221105

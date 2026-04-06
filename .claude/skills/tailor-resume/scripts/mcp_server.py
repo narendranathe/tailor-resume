@@ -39,7 +39,6 @@ from mcp.server.fastmcp import FastMCP  # noqa: E402
 
 from jd_gap_analyzer import run_analysis  # noqa: E402
 from latex_renderer import build_from_profile  # noqa: E402
-from pipeline import execute_text  # noqa: E402
 from profile_extractor import (  # noqa: E402
     parse_blob,
     parse_latex,
@@ -202,6 +201,7 @@ def run_pipeline(
     artifact_text: str,
     artifact_format: str = "blob",
     output_path: str = "out/resume.tex",
+    user_id: str = "",
     name: str = "",
     email: str = "",
     phone: str = "",
@@ -220,6 +220,7 @@ def run_pipeline(
         artifact_text: Resume text to parse (blob, markdown, LaTeX, or LinkedIn export).
         artifact_format: Format of artifact_text. One of: blob|markdown|latex|linkedin.
         output_path: Where to write resume.tex. Default: out/resume.tex.
+        user_id: Optional tenant/user identifier for multi-user scoping (empty = anonymous).
         name / email / phone / linkedin / github / portfolio: Runtime PII for header.
         top_gaps: Number of gap signals to include in the report.
 
@@ -240,26 +241,30 @@ def run_pipeline(
         if fmt not in _PARSERS:
             return json.dumps({"error": f"unknown format: {artifact_format}. Use: {list(_PARSERS)}"})
 
+        # 1. Parse
+        profile = _PARSERS[fmt](artifact_text)
+        profile_dict = profile_to_dict(profile)
+
+        # 2. Gap analysis
+        resume_text = json.dumps(profile_dict)
+        report = run_analysis(jd_text, resume_text, top_n=top_gaps)
+        report_dict = asdict(report)
+
+        # 3. Render
         header = {
             "name": name, "email": email, "phone": phone,
             "linkedin": linkedin, "github": github, "portfolio": portfolio,
         }
         buf = io.StringIO()
         with redirect_stdout(buf):
-            result = execute_text(
-                jd_text=jd_text,
-                artifact_text=artifact_text,
-                artifact_format=fmt,
-                output_path=output_path,
-                header=header,
-                top_gaps=top_gaps,
-            )
+            build_from_profile(profile_dict, _DEFAULT_TEMPLATE, output_path, header)
 
         warnings = [ln for ln in buf.getvalue().splitlines() if "WARNING" in ln]
         return json.dumps({
-            "profile": result.profile_dict,
-            "gap_report": asdict(result.report),
-            "output_path": str(Path(result.output_path).resolve()),
+            "profile": profile_dict,
+            "gap_report": report_dict,
+            "output_path": str(Path(output_path).resolve()),
+            "user_id": user_id,
             "warnings": warnings,
         }, indent=2)
     except Exception as exc:

@@ -9,7 +9,7 @@ OUT         := out
 MCP_SERVER  := $(SCRIPTS)/mcp_server.py
 MCP_GLOBAL  := $(HOME)/.claude/.mcp.json
 
-.PHONY: setup setup-all install-global demo test test-cov lint render mcp-serve mcp-install-global clean help
+.PHONY: setup setup-all install-global demo test test-cov lint render mcp-serve mcp-install-global sync-global serve clean help
 
 help:
 	@echo "Available targets:"
@@ -83,6 +83,12 @@ install-global: mcp-install-global
 
 mcp-install-global:
 	$(PYTHON) scripts/install_mcp_global.py
+
+sync-global:
+	$(PYTHON) scripts/sync_global.py
+
+serve:
+	$(PYTHON) $(SCRIPTS)/api_server.py
 
 clean:
 	rm -rf $(OUT)/

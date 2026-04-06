@@ -56,6 +56,11 @@ def render():
             st.warning(
                 "PDF parsing quality is degraded — run `pip install pdfminer.six` for best results."
             )
+        if not os.environ.get("ANTHROPIC_API_KEY"):
+            st.info(
+                "Tip: Set ANTHROPIC_API_KEY to enable AI-powered PDF parsing — "
+                "handles scanned PDFs and complex multi-column layouts automatically."
+            )
         uploaded = st.file_uploader(
             "Upload your resume",
             type=["tex", "md", "txt", "pdf", "docx", "doc"],
@@ -69,7 +74,8 @@ def render():
                 try:
                     raw = uploaded.read()
                     if ext == ".pdf":
-                        profile = parse_pdf(raw, source="pdf_upload")
+                        with st.spinner("Parsing PDF..."):
+                            profile = parse_pdf(raw, source="pdf_upload")
                     elif ext in (".docx", ".doc"):
                         profile = parse_docx(raw, source="docx_upload")
                     else:

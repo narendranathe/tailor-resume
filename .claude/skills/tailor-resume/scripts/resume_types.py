@@ -11,7 +11,7 @@ Usage:
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 
 # ---------------------------------------------------------------------------
@@ -93,3 +93,18 @@ class GapReport:
     keyword_gaps: List[Tuple[str, int]]   # (keyword, jd_freq) missing from resume
     ats_score_estimate: int               # 0-100 rough estimate
     recommendations: List[str]
+    user_id: str = ""                     # opaque tenant key; empty = anonymous
+
+
+# ---------------------------------------------------------------------------
+# ATS scoring result (owned by ats_scorer, consumed by api_server + mcp_server)
+# ---------------------------------------------------------------------------
+@dataclass
+class ATSScoreResult:
+    """Result from any ATS scoring engine (formula, embedding, or Claude)."""
+    score: int                           # 0-100
+    reasoning: str                       # human-readable explanation
+    bullet_scores: List[Dict]            # per-bullet feedback (empty for non-Claude methods)
+    recommendations: List[str]           # actionable improvement strings
+    method_used: str                     # "formula" | "embedding" | "claude" | "formula (fallback)"
+    formula_score: Optional[int] = None  # set when method_used != "formula"

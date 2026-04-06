@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>tailor-resume v2</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  body { font-family: system-ui, -apple-system, sans-serif; max-width: 960px; margin: 0 auto; padding: 32px 20px; color: #1e293b; background: #f8fafc; }
+  h1 { font-size: 1.5rem; font-weight: 700; margin: 0 0 4px; }
+  .subtitle { color: #64748b; font-size: 0.9rem; margin-bottom: 28px; }
+  .card { background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px; margin-bottom: 16px; }
+  label { display: block; font-weight: 600; font-size: 0.85rem; margin-bottom: 6px; color: #374151; }
+  textarea { width: 100%; font-family: monospace; font-size: 0.82rem; border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px; resize: vertical; }
+  textarea:focus, input:focus, select:focus { outline: 2px solid #2563eb; outline-offset: 1px; }
+  input, select { width: 100%; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 0.9rem; }
+  .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+  .field { margin-bottom: 0; }
+  .field label { font-weight: 500; }
+  .tabs { display: flex; gap: 4px; margin-bottom: 20px; border-bottom: 2px solid #e2e8f0; }
+  .tab { padding: 8px 18px; cursor: pointer; font-size: 0.9rem; font-weight: 600; color: #64748b; border-bottom: 2px solid transparent; margin-bottom: -2px; background: none; border-top: none; border-left: none; border-right: none; border-radius: 0; transition: color 0.15s; }
+  .tab:hover { color: #1e293b; }
+  .tab.active { color: #2563eb; border-bottom-color: #2563eb; }
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+  button.primary { padding: 10px 28px; background: #2563eb; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-size: 0.95rem; font-weight: 600; transition: background 0.15s; }
+  button.primary:hover { background: #1d4ed8; }
+  button.primary:disabled { background: #93c5fd; cursor: not-allowed; }
+  button.secondary { padding: 8px 20px; background: #fff; color: #374151; border: 1px solid #cbd5e1; border-radius: 6px; cursor: pointer; font-size: 0.9rem; font-weight: 500; transition: background 0.15s; }
+  button.secondary:hover { background: #f1f5f9; }
+  .result-area { margin-top: 20px; }
+  .score-badge { font-size: 2.5rem; font-weight: 800; line-height: 1; }
+  .score-label { font-size: 0.8rem; color: #64748b; margin-bottom: 16px; }
+  .gap-box { background: #f1f5f9; border-radius: 6px; padding: 14px; font-family: monospace; font-size: 0.8rem; white-space: pre-wrap; max-height: 280px; overflow-y: auto; }
+  .error { background: #fef2f2; border: 1px solid #fca5a5; border-radius: 6px; padding: 12px; color: #b91c1c; font-size: 0.9rem; }
+  .success-box { background: #f0fdf4; border: 1px solid #86efac; border-radius: 6px; padding: 14px; white-space: pre-wrap; font-family: monospace; font-size: 0.82rem; max-height: 360px; overflow-y: auto; }
+  .section-title { font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #94a3b8; margin-bottom: 10px; }
+  .compare-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px; }
+  .compare-card { border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px; }
+  .compare-card h3 { margin: 0 0 8px; font-size: 0.9rem; color: #64748b; }
+  .project-card { border: 1px solid #e2e8f0; border-radius: 6px; padding: 12px; margin-bottom: 10px; }
+  .project-card h4 { margin: 0 0 4px; font-size: 0.95rem; }
+  .project-card .tools { font-size: 0.78rem; color: #64748b; margin-top: 6px; }
+  .tag { display: inline-block; background: #eff6ff; color: #1d4ed8; font-size: 0.75rem; padding: 2px 7px; border-radius: 4px; margin: 2px; }
+</style>
+</head>
+<body>
+<h1>tailor-resume v2</h1>
+<p class="subtitle">ATS-optimized resume generation — paste JD + work history, get a tailored resume in seconds.</p>
+
+<div class="card">
+  <div class="section-title">Auth</div>
+  <div class="field">
+    <label>API Key</label>
+    <input type="password" id="apiKey" value="dev-key" placeholder="dev-key">
+  </div>
+</div>
+
+<!-- Shared inputs card -->
+<div class="card">
+  <div class="section-title">Inputs</div>
+  <label>Job Description</label>
+  <textarea id="jd" rows="6" placeholder="Paste the full job description here..."></textarea>
+
+  <label style="margin-top:14px">Resume / Work History</label>
+  <textarea id="artifact" rows="6" placeholder="Paste your resume text, LinkedIn export, markdown, or LaTeX source..."></textarea>
+
+  <label style="margin-top:14px">Format</label>
+  <select id="format">
+    <option value="blob">blob (free-form text with Company:/Title: headers)</option>
+    <option value="markdown">markdown</option>
+    <option value="latex">latex</option>
+    <option value="linkedin">linkedin PDF export</option>
+  </select>
+</div>
+
+<div class="card">
+  <div class="section-title">Contact Info (injected into resume header)</div>
+  <div class="grid-3">
+    <div class="field"><label>Name</label><input id="name" placeholder="Jane Smith"></div>
+    <div class="field"><label>Email</label><input id="email" placeholder="jane@example.com"></div>
+    <div class="field"><label>Phone</label><input id="phone" placeholder="+1 555-000-0000"></div>
+    <div class="field"><label>LinkedIn URL</label><input id="linkedin" placeholder="https://linkedin.com/in/jane"></div>
+    <div class="field"><label>GitHub URL</label><input id="github" placeholder="https://github.com/jane"></div>
+    <div class="field"><label>Portfolio URL</label><input id="portfolio" placeholder="https://jane.dev"></div>
+  </div>
+</div>
+
+<!-- Tab navigation -->
+<div class="tabs">
+  <button class="tab active" onclick="switchTab('resume')">Resume</button>
+  <button class="tab" onclick="switchTab('coverletter')">Cover Letter</button>
+  <button class="tab" onclick="switchTab('compare')">ATS Compare</button>
+  <button class="tab" onclick="switchTab('github')">GitHub Projects</button>
+</div>
+
+<!-- Tab: Resume -->
+<div id="tab-resume" class="tab-panel active">
+  <button class="primary" id="btnGenerate" onclick="generate()">Generate Resume</button>
+  <div class="result-area" id="resultGenerate"></div>
+</div>
+
+<!-- Tab: Cover Letter -->
+<div id="tab-coverletter" class="tab-panel">
+  <div style="margin-bottom:12px">
+    <label>Generation method</label>
+    <select id="clMethod" style="width:auto;display:inline-block;margin-left:8px">
+      <option value="template">Template (fast, deterministic)</option>
+      <option value="claude">Claude AI (richer, uses API key)</option>
+    </select>
+  </div>
+  <button class="primary" id="btnCL" onclick="genCoverLetter()">Generate Cover Letter</button>
+  <div class="result-area" id="resultCL"></div>
+</div>
+
+<!-- Tab: ATS Compare -->
+<div id="tab-compare" class="tab-panel">
+  <p style="color:#64748b;font-size:0.88rem;margin:0 0 12px">Scores the same resume against the JD using both the formula engine and Claude-as-judge. Shows side-by-side results.</p>
+  <button class="primary" id="btnCompare" onclick="runCompare()">Run Side-by-Side Comparison</button>
+  <div class="result-area" id="resultCompare"></div>
+</div>
+
+<!-- Tab: GitHub Projects -->
+<div id="tab-github" class="tab-panel">
+  <div style="margin-bottom:12px">
+    <label>GitHub Username</label>
+    <input id="ghUsername" placeholder="narendranathe" style="width:260px;display:inline-block">
+    <label style="display:inline-block;margin-left:16px;font-weight:500">
+      <input type="checkbox" id="ghReadmes" style="width:auto;margin-right:4px"> Fetch READMEs (slower)
+    </label>
+    <label style="display:inline-block;margin-left:16px;font-weight:500">
+      Max repos: <input type="number" id="ghLimit" value="10" min="1" max="50" style="width:60px;display:inline-block;margin-left:4px">
+    </label>
+  </div>
+  <button class="primary" id="btnGH" onclick="fetchGitHub()">Fetch GitHub Projects</button>
+  <div class="result-area" id="resultGH"></div>
+</div>
+
+<script>
+// ---- Tab switching ----
+function switchTab(name) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  event.target.classList.add('active');
+}
+
+// ---- Shared helpers ----
+function apiKey() { return document.getElementById('apiKey').value; }
+function jdText() { return document.getElementById('jd').value; }
+function artifactText() { return document.getElementById('artifact').value; }
+function contactInfo() {
+  return {
+    name: document.getElementById('name').value,
+    email: document.getElementById('email').value,
+    phone: document.getElementById('phone').value,
+    linkedin: document.getElementById('linkedin').value,
+    github: document.getElementById('github').value,
+    portfolio: document.getElementById('portfolio').value,
+  };
+}
+
+async function apiFetch(path, body, btn, loadingText) {
+  btn.disabled = true;
+  const orig = btn.textContent;
+  btn.textContent = loadingText;
+  try {
+    const resp = await fetch(path, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json', 'X-API-Key': apiKey()},
+      body: JSON.stringify(body)
+    });
+    const data = await resp.json();
+    return { ok: resp.ok, status: resp.status, data };
+  } finally {
+    btn.disabled = false;
+    btn.textContent = orig;
+  }
+}
+
+function errorHtml(status, detail) {
+  return `<div class="error">Error ${status}: ${typeof detail === 'string' ? detail : JSON.stringify(detail)}</div>`;
+}
+
+// ---- Resume tab ----
+async function generate() {
+  const btn = document.getElementById('btnGenerate');
+  const el = document.getElementById('resultGenerate');
+  el.style.display = 'block';
+  el.innerHTML = "<p style='color:#64748b'>Running pipeline...</p>";
+
+  const { ok, status, data } = await apiFetch('/generate', {
+    jd_text: jdText(),
+    artifact_text: artifactText(),
+    artifact_format: document.getElementById('format').value,
+    ...contactInfo()
+  }, btn, 'Generating...');
+
+  if (!ok) { el.innerHTML = errorHtml(status, data.detail); return; }
+
+  const color = data.ats_score >= 75 ? '#16a34a' : data.ats_score >= 50 ? '#d97706' : '#dc2626';
+  const vault = data.vault_version ? `<div style="margin-top:8px;font-size:0.82rem;color:#64748b">Vault: <code>${data.vault_version}</code></div>` : '';
+  const pdfLink = data.pdf_path
+    ? `<a href="file://${data.pdf_path}" download style="display:inline-block;margin-top:10px;padding:7px 18px;background:#16a34a;color:#fff;border-radius:6px;font-weight:600;font-size:0.88rem;text-decoration:none;">&#11015; Download PDF</a>`
+    : (data.compile_warning ? `<div style="margin-top:8px;font-size:0.8rem;color:#d97706">PDF unavailable: ${escHtml(data.compile_warning)}</div>` : '');
+  el.innerHTML = `
+    <div class="card">
+      <div style="color:${color}" class="score-badge">${data.ats_score}<span style="font-size:1rem;font-weight:400">/100</span></div>
+      <div class="score-label">ATS Score</div>
+      <strong>Resume written to:</strong> <code>${data.resume_path}</code>
+      ${pdfLink}
+      ${vault}
+      <div style="margin-top:14px"><strong>Gap Summary</strong></div>
+      <div class="gap-box">${data.gap_summary.join('\n')}</div>
+    </div>`;
+}
+
+// ---- Cover Letter tab ----
+async function genCoverLetter() {
+  const btn = document.getElementById('btnCL');
+  const el = document.getElementById('resultCL');
+  el.style.display = 'block';
+  el.innerHTML = "<p style='color:#64748b'>Generating cover letter...</p>";
+
+  const { ok, status, data } = await apiFetch('/cover-letter', {
+    jd_text: jdText(),
+    artifact_text: artifactText(),
+    artifact_format: document.getElementById('format').value,
+    method: document.getElementById('clMethod').value,
+    ...contactInfo()
+  }, btn, 'Generating...');
+
+  if (!ok) { el.innerHTML = errorHtml(status, data.detail); return; }
+
+  const clPdfLink = data.pdf_path
+    ? `<a href="file://${data.pdf_path}" download style="display:inline-block;margin-left:10px;padding:7px 18px;background:#16a34a;color:#fff;border-radius:6px;font-weight:600;font-size:0.88rem;text-decoration:none;">&#11015; Download PDF</a>`
+    : '';
+  el.innerHTML = `
+    <div class="card">
+      <div style="font-size:0.82rem;color:#64748b;margin-bottom:8px">
+        ${data.word_count} words &middot; method: ${data.method_used}
+      </div>
+      <div class="success-box">${escHtml(data.txt)}</div>
+      <div style="margin-top:10px">
+        <button class="secondary" onclick="copyText(this, ${JSON.stringify(data.txt)})">Copy plain text</button>
+        ${clPdfLink}
+      </div>
+    </div>`;
+}
+
+// ---- ATS Compare tab ----
+async function runCompare() {
+  const btn = document.getElementById('btnCompare');
+  const el = document.getElementById('resultCompare');
+  el.style.display = 'block';
+  el.innerHTML = "<p style='color:#64748b'>Scoring with both engines...</p>";
+
+  const { ok, status, data } = await apiFetch('/compare', {
+    jd_text: jdText(),
+    resume_text: artifactText()
+  }, btn, 'Comparing...');
+
+  if (!ok) { el.innerHTML = errorHtml(status, data.detail); return; }
+
+  const f = data.formula, c = data.claude;
+  const fColor = f.score >= 75 ? '#16a34a' : f.score >= 50 ? '#d97706' : '#dc2626';
+  const cColor = c.score >= 75 ? '#16a34a' : c.score >= 50 ? '#d97706' : '#dc2626';
+
+  el.innerHTML = `
+    <div class="compare-grid">
+      <div class="compare-card">
+        <h3>Formula Engine</h3>
+        <div class="score-badge" style="color:${fColor}">${f.score}<span style="font-size:1rem;font-weight:400">/100</span></div>
+        <div class="score-label">${f.method_used}</div>
+        <div style="font-size:0.85rem">${escHtml(f.reasoning)}</div>
+        <ul style="font-size:0.82rem;margin-top:8px;padding-left:18px">
+          ${f.recommendations.slice(0,3).map(r => `<li>${escHtml(r)}</li>`).join('')}
+        </ul>
+      </div>
+      <div class="compare-card">
+        <h3>Claude AI</h3>
+        <div class="score-badge" style="color:${cColor}">${c.score}<span style="font-size:1rem;font-weight:400">/100</span></div>
+        <div class="score-label">${c.method_used}${c.formula_score != null ? ` (formula baseline: ${c.formula_score})` : ''}</div>
+        <div style="font-size:0.85rem">${escHtml(c.reasoning)}</div>
+        <ul style="font-size:0.82rem;margin-top:8px;padding-left:18px">
+          ${c.recommendations.slice(0,3).map(r => `<li>${escHtml(r)}</li>`).join('')}
+        </ul>
+      </div>
+    </div>`;
+}
+
+// ---- GitHub Projects tab ----
+async function fetchGitHub() {
+  const btn = document.getElementById('btnGH');
+  const el = document.getElementById('resultGH');
+  const username = document.getElementById('ghUsername').value.trim();
+  if (!username) { el.innerHTML = errorHtml(422, 'Username required'); return; }
+  el.style.display = 'block';
+  el.innerHTML = "<p style='color:#64748b'>Fetching repos...</p>";
+
+  const { ok, status, data } = await apiFetch('/ingest/github', {
+    username,
+    limit: parseInt(document.getElementById('ghLimit').value) || 10,
+    fetch_readmes: document.getElementById('ghReadmes').checked
+  }, btn, 'Fetching...');
+
+  if (!ok) { el.innerHTML = errorHtml(status, data.detail); return; }
+
+  if (!data.projects.length) {
+    el.innerHTML = `<div class="card">No public repos found for <strong>${escHtml(username)}</strong>.</div>`;
+    return;
+  }
+
+  const cards = data.projects.map(p => `
+    <div class="project-card">
+      <h4><a href="${escHtml(p.url)}" target="_blank" rel="noopener">${escHtml(p.name)}</a>
+        ${p.stars >= 10 ? `<span style="font-size:0.8rem;color:#d97706;margin-left:6px">&#9733; ${p.stars}</span>` : ''}
+      </h4>
+      <div style="font-size:0.85rem;color:#374151">${escHtml(p.description || '')}</div>
+      ${p.bullets.slice(0,2).map(b => `<div style="font-size:0.82rem;color:#64748b;margin-top:4px">- ${escHtml(b.text)}</div>`).join('')}
+      <div class="tools">${p.tools.slice(0,6).map(t => `<span class="tag">${escHtml(t)}</span>`).join('')}</div>
+    </div>`).join('');
+
+  el.innerHTML = `
+    <div class="card">
+      <div class="section-title">${data.count} repos fetched for @${escHtml(username)}</div>
+      ${cards}
+    </div>`;
+}
+
+// ---- Utilities ----
+function escHtml(str) {
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function copyText(btn, text) {
+  navigator.clipboard.writeText(text).then(() => {
+    const orig = btn.textContent;
+    btn.textContent = 'Copied!';
+    setTimeout(() => btn.textContent = orig, 1500);
+  });
+}
+</script>
+</body>
+</html>

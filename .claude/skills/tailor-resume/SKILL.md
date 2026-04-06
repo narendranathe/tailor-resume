@@ -105,7 +105,7 @@ For each gap:
 - If a metric is missing, ask targeted prompts:
   - "What was the baseline → outcome?"
   - "What was the scale? (rows/day, users, dollars, latency, incidents)"
-- **Never invent numbers.** Range phrasing allowed only if user confirms.
+- **Evidence reframing over zero fabrication.** Never invent facts or claim outcomes that didn't happen. But always reframe real evidence at its *strongest defensible angle*: claim ownership if you owned it, use the upper bound of confirmed ranges, convert "contributed to" into active impact if accurate. Understatement is not integrity — it's an ATS penalty. If a metric is missing, ask for a range; use the confirmed range in the bullet. Vague "improved performance" bullets score 0 on ATS; a confirmed "reduced latency ~40%" bullet scores fully.
 - For employment gaps: address subtly with freelance work, projects, or education.
 - For title mismatches: standardize to the nearest market-recognized equivalent.
 
@@ -115,12 +115,9 @@ For each gap:
 
 **Single page — no exceptions.** Every line must earn its place.
 
-**Bullet formula:** `Accomplished [X] as measured by [Y], by doing [Z].`
-- X = outcome or achievement
-- Y = quantitative measure (%, $, latency, count, ratio)
-- Z = specific action or method
-
-**Per-bullet rules:**
+**Bullet formula:** `[Action verb] [what] by [method], [metric] — ≤20 words HARD LIMIT`
+- **STAR compliance required on every bullet:** Action + Result minimum. Situation and Task are embedded in the role header, not stated in the bullet (compression).
+- Renderer enforces ≤20 words automatically via `truncate_to_limit()` — write compliant bullets before render.
 - Lead with a strong action verb (no "I")
 - Quantify wherever possible — never leave "optimized pipelines" without the %
 - Be specific about what was built, why, and how success was measured
@@ -198,6 +195,10 @@ For each gap:
 - [ ] No vague claims without metrics
 - [ ] No hardcoded PII in base template
 - [ ] Top JD MQs explicitly reflected
+- [ ] Every bullet ≤20 words (renderer-enforced)
+- [ ] Every bullet has a measurable Result (%, $, time, count)
+- [ ] STAR score ≥2/2 for every bullet in top 3 roles
+- [ ] Every claim is evidence-reframed (not fabricated, but pushed to its strongest defensible angle)
 - [ ] Zero fabricated claims
 - [ ] ATS meets threshold: **97+** for same role, **90+** for overlapping role
 

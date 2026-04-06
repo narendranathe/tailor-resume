@@ -182,10 +182,22 @@ def keyword_gaps(
     return gaps[:top_n]
 
 
+_SENIORITY_WORDS = {"senior", "lead", "principal", "staff", "architect", "manager", "director"}
+
+
 def estimate_ats_score(
-    jd_text: str, resume_text: str, category_coverage: Dict[str, Dict]
+    jd_text: str,
+    resume_text: str,
+    category_coverage: Dict[str, Dict],
+    bullet_quality_avg: float = 0.0,
 ) -> int:
-    """Rough ATS score estimate (0-100)."""
+    """
+    ATS score estimate (0-100) — 4-component formula:
+      40% keyword overlap     — JD token intersection / JD token count
+      30% category coverage   — signal taxonomy average
+      20% bullet quality      — STAR + metric density (pass 0.0 for backward compat)
+      10% seniority signal    — JD seniority words echoed in resume
+    """
     jd_tokens = set(tokenize(jd_text))
     resume_tokens = set(tokenize(resume_text))
     keyword_overlap = len(jd_tokens & resume_tokens) / max(len(jd_tokens), 1)
@@ -197,8 +209,34 @@ def estimate_ats_score(
     ]
     avg_category = sum(category_scores) / max(len(category_scores), 1)
 
-    score = int((0.5 * keyword_overlap + 0.5 * avg_category) * 100)
+    jd_lower = jd_text.lower()
+    resume_lower = resume_text.lower()
+    jd_needs_seniority = any(w in jd_lower for w in _SENIORITY_WORDS)
+    resume_has_seniority = any(w in resume_lower for w in _SENIORITY_WORDS)
+    seniority_match = 1.0 if (not jd_needs_seniority or resume_has_seniority) else 0.3
+
+    score = int((
+        0.40 * keyword_overlap
+        + 0.30 * avg_category
+        + 0.20 * bullet_quality_avg
+        + 0.10 * seniority_match
+    ) * 100)
     return min(score, 100)
+
+
+def _extract_bullets_for_scoring(resume_text: str) -> List[Dict]:
+    """Extract bullet dicts from a JSON profile string, or return [] for plain text."""
+    try:
+        import json as _json
+        profile = _json.loads(resume_text)
+        bullets: List[Dict] = []
+        for role in profile.get("experience", []):
+            bullets.extend(role.get("bullets", []))
+        for proj in profile.get("projects", []):
+            bullets.extend(proj.get("bullets", []))
+        return bullets
+    except Exception:
+        return []
 
 
 def run_analysis(
@@ -206,10 +244,18 @@ def run_analysis(
     resume_text: str,
     top_n: int = 5,
 ) -> GapReport:
+    from star_validator import bullet_quality_score  # lazy import — avoids circular dep
+
+    bullets = _extract_bullets_for_scoring(resume_text)
+    bullet_quality_avg = (
+        sum(bullet_quality_score(b) for b in bullets) / max(len(bullets), 1)
+        if bullets else 0.0
+    )
+
     category_coverage = analyze_category_coverage(jd_text, resume_text)
     top_missing = build_gap_signals(category_coverage, top_n=top_n)
     kw_gaps = keyword_gaps(jd_text, resume_text)
-    ats_score = estimate_ats_score(jd_text, resume_text, category_coverage)
+    ats_score = estimate_ats_score(jd_text, resume_text, category_coverage, bullet_quality_avg)
 
     recommendations = []
     if ats_score < 50:
