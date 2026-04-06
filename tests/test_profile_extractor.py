@@ -1006,6 +1006,36 @@ class TestMergeProfiles:
 # ---------------------------------------------------------------------------
 # profile_to_dict
 # ---------------------------------------------------------------------------
+class TestParseBlobDateRegression:
+    def test_october_not_split_on_substring_to(self):
+        """
+        Regression: the blob date regex used `(?:–|-|to)` as the separator,
+        which matched the substring "to" inside month names like "October" —
+        producing start="Oc" and end="ber 2024 – May 2025".
+
+        The fix uses (?<=\\s)to(?=\\s) so "to" only matches when surrounded
+        by whitespace (i.e. when it's a real word, not a substring).
+        """
+        profile = parse_blob(
+            "Company: Acme\nTitle: Engineer\nDates: October 2024 – May 2025\n"
+        )
+        role = profile.experience[0]
+        assert role.start == "October 2024"
+        assert role.end == "May 2025"
+
+    def test_word_to_still_works_as_separator(self):
+        """The word 'to' surrounded by whitespace must still split dates."""
+        profile = parse_blob(
+            "Company: Acme\nTitle: Engineer\nDates: Jan 2022 to Dec 2023\n"
+        )
+        role = profile.experience[0]
+        assert role.start == "Jan 2022"
+        assert role.end == "Dec 2023"
+
+
+# ---------------------------------------------------------------------------
+# profile_to_dict
+# ---------------------------------------------------------------------------
 class TestProfileToDict:
     def test_profile_to_dict_is_serializable(self):
         profile = parse_blob(

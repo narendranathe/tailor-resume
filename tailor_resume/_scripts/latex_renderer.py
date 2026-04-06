@@ -106,6 +106,8 @@ def render_skills(skills_data) -> str:
     """
     skills_data: either a list of strings or a dict with categories.
     """
+    if not skills_data:
+        return ""
     if isinstance(skills_data, list):
         # Plain list — output as a single skills line
         skill_str = escape(", ".join(skills_data))
@@ -136,6 +138,8 @@ def render_skills(skills_data) -> str:
 
 
 def render_education(education: List[Dict]) -> str:
+    if not education:
+        return ""
     blocks = ["\\section{Education}", "  \\resumeSubHeadingListStart"]
     for edu in education:
         school = escape(edu.get("school", edu.get("institution", "")))
@@ -172,6 +176,13 @@ def render_template(template_path: str, output_path: str, replacements: Dict[str
     content = Path(template_path).read_text(encoding="utf-8")
     for key, value in replacements.items():
         content = content.replace(f"{{{{{key}}}}}", value)
+
+    # Clean up empty contact-line entries when LinkedIn / GitHub / portfolio
+    # are not provided. Without this the header renders as "email | |" with
+    # dangling separators around empty \href{}{\underline{}} fragments.
+    content = re.sub(r"\\href\{\}\{\\underline\{\}\}\s*\$\|\$\s*", "", content)
+    content = re.sub(r"\s*\$\|\$\s*\\href\{\}\{\\underline\{\}\}", "", content)
+    content = re.sub(r"\\href\{\}\{\\underline\{\}\}", "", content)
 
     # Warn about any remaining unfilled placeholders
     remaining = re.findall(r"\{\{[A-Z_]+\}\}", content)
