@@ -164,11 +164,14 @@ class TestRenderSkills:
         assert "Python" in result
         assert "Airflow" in result
 
-    def test_renders_empty_list(self):
+    def test_returns_empty_string_for_empty_list(self):
+        # An empty skills list should suppress the entire section so the
+        # rendered resume doesn't ship a bare "Technical Skills" header
+        # with no content underneath (which produces a wasted page).
         result = render_skills([])
-        assert "\\section{Technical Skills}" in result
+        assert result == ""
 
-    def test_returns_empty_string_for_invalid_type(self):
+    def test_returns_empty_string_for_none(self):
         result = render_skills(None)
         assert result == ""
 
@@ -197,9 +200,12 @@ class TestRenderEducation:
         result = render_education(edu)
         assert "Ph.D. Computer Science" in result
 
-    def test_empty_education(self):
+    def test_returns_empty_string_for_empty_education(self):
+        # An empty education list should suppress the section entirely so
+        # the resume doesn't render a bare "Education" header with nothing
+        # underneath (which also triggers a "missing \item" LaTeX warning).
         result = render_education([])
-        assert "\\section{Education}" in result
+        assert result == ""
 
 
 # ---------------------------------------------------------------------------
