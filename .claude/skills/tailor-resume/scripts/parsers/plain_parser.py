@@ -10,7 +10,7 @@ Used by:
 from __future__ import annotations
 
 import re
-from typing import List, Optional
+from typing import Optional
 
 from resume_types import Bullet, Profile, Project, Role
 from text_utils import extract_metrics, extract_tools, score_confidence

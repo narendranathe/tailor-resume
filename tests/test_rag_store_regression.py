@@ -28,7 +28,6 @@ from __future__ import annotations
 import json
 import math
 import sys
-from dataclasses import asdict
 from pathlib import Path
 from typing import List
 
@@ -40,8 +39,8 @@ _SCRIPTS_DIR = Path(__file__).parent.parent / ".claude" / "skills" / "tailor-res
 if str(_SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS_DIR))
 
-from rag_store import SQLiteStore, _embed_tfidf, embed, get_store
-from resume_types import Profile, Role, Bullet, Project, profile_to_dict
+from rag_store import SQLiteStore, _embed_tfidf, get_store  # noqa: E402
+from resume_types import Profile, Role, Bullet, Project, profile_to_dict  # noqa: E402
 
 
 # ---------------------------------------------------------------------------

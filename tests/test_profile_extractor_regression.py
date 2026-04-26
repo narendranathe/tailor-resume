@@ -17,10 +17,8 @@ Run with:
 from __future__ import annotations
 
 import sys
-import os
 from pathlib import Path
 
-import pytest
 
 # Make scripts importable regardless of how pytest is invoked
 sys.path.insert(

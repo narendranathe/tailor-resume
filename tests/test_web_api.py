@@ -8,10 +8,7 @@ and Supabase calls so tests run fast without external dependencies.
 from __future__ import annotations
 
 import base64
-import io
-import json
-from typing import Any, Dict, Optional
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 from fastapi.testclient import TestClient
@@ -51,7 +48,6 @@ def client(monkeypatch):
     monkeypatch.setenv("CLERK_PEM_KEY", "")
 
     # Re-import fresh settings so monkeypatched env vars take effect
-    import importlib
     import app.config as _cfg
     _cfg.get_settings.cache_clear()
 

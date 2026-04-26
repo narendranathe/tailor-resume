@@ -12,9 +12,8 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
-import pytest
 
 # ---------------------------------------------------------------------------
 # Path setup — must happen before any app imports
@@ -35,7 +34,6 @@ for _p in (_BACKEND, _SCRIPTS):
 
 def _make_client(monkeypatch, *, environment="development"):
     """Return a TestClient with dev auth bypass."""
-    import importlib
     import app.config as _cfg
 
     monkeypatch.setenv("ENVIRONMENT", environment)
@@ -124,7 +122,6 @@ class TestCheckout:
 
     def test_checkout_503_when_stripe_not_configured(self, monkeypatch):
         """Returns 503 when STRIPE_SECRET_KEY is not set."""
-        import importlib
         import app.config as _cfg
 
         monkeypatch.setenv("ENVIRONMENT", "development")
