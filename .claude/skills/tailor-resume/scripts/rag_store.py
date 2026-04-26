@@ -180,10 +180,11 @@ class PineconeStore:
 # ---------------------------------------------------------------------------
 
 class SQLiteStore:
-    def __init__(self, db_path: str = "~/.tailor_resume/profiles.db"):
+    def __init__(self, db_path: str = "~/.tailor_resume/profiles.db", embed_fn=None):
         self._path = Path(db_path).expanduser()
         self._path.parent.mkdir(parents=True, exist_ok=True)
         self._conn = sqlite3.connect(str(self._path))
+        self._embed_fn = embed_fn if embed_fn is not None else embed
         self._init_schema()
 
     def _init_schema(self) -> None:
@@ -204,7 +205,7 @@ class SQLiteStore:
 
     def store(self, user_id: str, profile: Dict, metadata: Optional[Dict] = None) -> str:
         text = _profile_to_text(profile)
-        vector = embed(text)
+        vector = self._embed_fn(text)
         vector_id = f"{user_id}_{int(time.time())}"
         self._conn.execute(
             "INSERT INTO profiles (user_id, vector_id, profile_json, embedding, stored_at) VALUES (?,?,?,?,?)",
@@ -217,7 +218,7 @@ class SQLiteStore:
     def query(self, user_id: str, query_text: str, top_k: int = 3) -> List[Dict]:
         import math
 
-        q_vec = embed(query_text)
+        q_vec = self._embed_fn(query_text)
         rows = self._conn.execute(
             "SELECT profile_json, embedding FROM profiles WHERE user_id=? ORDER BY stored_at DESC LIMIT 50",
             (user_id,),

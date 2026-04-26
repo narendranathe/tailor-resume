@@ -152,8 +152,8 @@ def parse_latex(text: str, source: str = "latex_resume") -> Profile:
         profile.education.append({
             "institution": _clean_latex(args[0]),
             "degree": _clean_latex(args[2]) if len(args) > 2 else "",
-            "dates": _clean_latex(args[1]),
-            "location": _clean_latex(args[3]) if len(args) > 3 else "",
+            "dates": _clean_latex(args[3]) if len(args) > 3 else "",
+            "location": _clean_latex(args[1]),
         })
 
     # ---- Skills ------------------------------------------------------------
@@ -1416,7 +1416,7 @@ def parse_pdf(file_bytes: bytes, source: str = "pdf_resume") -> Profile:
             reader = PdfReader(io.BytesIO(file_bytes))
             pages = [page.extract_text() or "" for page in reader.pages]
             text = "\n".join(pages)
-        except ImportError:
+        except Exception:
             pass
 
     # Tier 3: stdlib extractor
