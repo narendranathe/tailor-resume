@@ -12,14 +12,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt .
+COPY web_app/backend/requirements.txt .
 RUN pip install --upgrade pip && pip install -r requirements.txt
 
 # Copy backend source
-COPY app/ ./app/
+COPY web_app/backend/app/ ./app/
 
 # Copy tailor-resume scripts (pipeline, parsers, stores, etc.)
-COPY ../../.claude/skills/tailor-resume/scripts/ ./scripts/
+COPY .claude/skills/tailor-resume/scripts/ ./scripts/
 
 ENV PYTHONPATH=/app/scripts
 

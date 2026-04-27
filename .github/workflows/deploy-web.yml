@@ -22,7 +22,6 @@ jobs:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
 
       - name: Deploy
-        working-directory: web_app
-        run: flyctl deploy --remote-only
+        run: flyctl deploy --config web_app/fly.toml --remote-only
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
