@@ -1,0 +1,66 @@
+\documentclass[letterpaper,11pt]{article}
+
+\usepackage{latexsym}
+\usepackage[empty]{fullpage}
+\usepackage{titlesec}
+\usepackage{marvosym}
+\usepackage[usenames,dvipsnames]{color}
+\usepackage{verbatim}
+\usepackage{enumitem}
+\usepackage[hidelinks]{hyperref}
+\usepackage{fancyhdr}
+
+\newcommand{\resumeItem}[1]{\item\small{#1 \vspace{-2pt}}}
+\newcommand{\resumeSubheading}[4]{\item\small{\textbf{#1}\hfill #2 \\ \textit{#3}\hfill \textit{#4}}}
+\newcommand{\resumeProjectHeading}[2]{\item\small{\textbf{#1} \hfill #2}}
+
+\begin{document}
+
+\begin{center}
+    \textbf{\Huge Jane Doe} \\ \vspace{1pt}
+    \small 555-123-4567 $|$ \href{mailto:jane.doe@example.com}{jane.doe@example.com} $|$
+    \href{https://linkedin.com/in/janedoe}{linkedin.com/in/janedoe} $|$ Dallas, TX
+\end{center}
+
+\section{Experience}
+  \resumeSubheading
+    {Senior Data Engineer}{March 2022 -- Present}
+    {DataWorks Inc}{Austin, TX}
+    \resumeItem{Built a governed semantic layer on Azure Databricks with Delta Lake, defining 40+ KPI metrics used by Finance, ML, and BI teams; cut metric discrepancies from 12 weekly incidents to zero}
+    \resumeItem{Owned CI/CD end-to-end through Azure DevOps for 15 data pipelines, compressing deployment cycles from 8 weeks to 6 days}
+    \resumeItem{Reengineered ETL from full-table reloads to CDC incremental merge upserts on Delta Lake, cutting batch runtime from 45 min to 9 min and compute costs by 68\%}
+    \resumeItem{Migrated Spark jobs to AKS with HPA, consolidating 18 nodes to 4-8 dynamic, reducing monthly cloud spend by \$4,100}
+
+  \resumeSubheading
+    {Data Engineer}{August 2019 -- February 2022}
+    {Acme Analytics Corp}{Chicago, IL}
+    \resumeItem{Engineered Azure AI Anomaly Detector pipelines selecting optimal algorithms per time-series profile, achieving 95\%+ accuracy across 200+ monitored metrics}
+    \resumeItem{Built Elasticsearch enterprise search indexing 150K+ internal documents, reducing support desk volume by 75\% via \href{https://example.com/search}{self-serve queries}}
+    \resumeItem{Developed Python ETL framework with Pytest unit tests and GitHub Actions CI, reducing production data defects by 40\% year-over-year}
+
+\section{Projects}
+  \resumeProjectHeading
+    {Real-time Risk Analytics $|$ Python, Kafka, Spark, Redis}{2024}
+    \resumeItem{Built a Kafka + Spark streaming pipeline ingesting 1M events/sec with sub-second alerting}
+    \resumeItem{Implemented Redis-backed sliding window aggregations powering live dashboards}
+
+  \resumeProjectHeading
+    {Fraud Detection ML Pipeline $|$ Python, MLflow, Airflow, XGBoost}{2023}
+    \resumeItem{Designed an MLflow + Airflow pipeline training XGBoost models on 50M transactions with 92\% precision}
+
+\section{Education}
+  \resumeSubheading
+    {University of Missouri-Columbia}{Columbia, MO}
+    {Master of Science in Computer Science}{Aug 2017 -- May 2019}
+
+\section{Technical Skills}
+  \textbf{Languages}: Python, SQL, Bash, Java, Scala \\
+  \textbf{Data}: Spark, Kafka, Airflow, dbt, Delta Lake \\
+  \textbf{Cloud}: Azure, AWS, Databricks \\
+  \textbf{DevOps}: Docker, Kubernetes, Terraform, CI/CD
+
+\section{Certifications}
+  AWS Certified Solutions Architect -- Associate \\
+  Databricks Certified Data Engineer Professional
+
+\end{document}
