@@ -34,7 +34,6 @@ Notes on bugs noticed (NOT fixed here per issue #75 scope):
 """
 from __future__ import annotations
 
-import importlib
 import os
 import sys
 import types
