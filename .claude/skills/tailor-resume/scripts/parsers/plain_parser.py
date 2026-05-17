@@ -21,14 +21,20 @@ from parsers.normalizer import _dedupe, _parse_dates
 # Section detection
 # ---------------------------------------------------------------------------
 
+# Allow an optional period after month abbreviations (e.g. "Aug. 2023") so the
+# full range "Aug. 2023 – July 2024" matches as one group (regression for #102:
+# previously the regex matched only "July 2024" and the leftover " – July 2024"
+# leaked into the company line / following title).
 _DATE_PATTERN = re.compile(
     r"(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|"
     r"Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|"
-    r"Dec(?:ember)?|Q[1-4])[\s,]*\d{2,4}"
+    r"Dec(?:ember)?)\.?[\s,]*\d{2,4}"
     r"(?:\s*[–\-]\s*(?:\d{2,4}|[Pp]resent|[Cc]urrent|[Nn]ow|"
     r"(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|"
     r"Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|"
-    r"Dec(?:ember)?)[\s,]*\d{2,4}))?|"
+    r"Dec(?:ember)?)\.?[\s,]*\d{2,4}))?|"
+    r"Q[1-4][\s,]*\d{2,4}"
+    r"(?:\s*[–\-]\s*(?:\d{2,4}|[Pp]resent|[Cc]urrent|[Nn]ow))?|"
     r"\d{4}\s*[-–]\s*(?:\d{4}|[Pp]resent|[Cc]urrent|[Nn]ow)",
     re.IGNORECASE,
 )
@@ -71,6 +77,55 @@ def _like_title_line(ln: str) -> bool:
     )
 
 
+# "City, ST" or "City, Country" trailing location.  Matches the Jake template
+# 2-line role header ("Company Name Dallas, TX") where there's no double-space
+# separator between company and location.
+_TRAILING_LOCATION_RE = re.compile(
+    r"^(?P<company>.+?)\s+(?P<loc>[A-Z][A-Za-z .'\-]+,\s*[A-Z][A-Za-z .]{1,30})\s*$"
+)
+
+
+def _split_company_location(s: str) -> tuple[str, str]:
+    """Split 'ExponentHR Dallas, TX' into ('ExponentHR', 'Dallas, TX').
+
+    Strategy:
+      1. Prefer double-space separator if present.
+      2. Else look for a 'City, ST' / 'City, Country' suffix.
+      3. Else treat the whole line as company with empty location.
+    """
+    if "  " in s:
+        parts = re.split(r"\s{2,}", s.strip(), maxsplit=1)
+        return parts[0].strip(), (parts[1].strip() if len(parts) > 1 else "")
+    m = _TRAILING_LOCATION_RE.match(s.strip())
+    if m:
+        return m.group("company").strip(), m.group("loc").strip()
+    return s.strip(), ""
+
+
+# Project header line:  "Name | Tech1, Tech2, Tech3  Year(s)"
+# Examples from Jake template:
+#   "Real-Time Fraud Detection Pipeline | PySpark, Kafka, ... 2026"
+#   "JobScout – Automated Data Integration Platform | Python, FastAPI ... 2025"
+_PROJECT_HEADER_RE = re.compile(
+    r"^(?P<name>[^|•]+?)\s*\|\s*(?P<tech>[^|]+?)(?:\s+(?P<year>\d{4}(?:\s*[-–]\s*\d{4})?))?\s*$"
+)
+
+
+def _parse_project_header(ln: str) -> Optional[tuple[str, list, str]]:
+    """If ln looks like a 'Name | Tech Year' project header, return
+    (name, tech_list, year). Else return None."""
+    m = _PROJECT_HEADER_RE.match(ln)
+    if not m:
+        return None
+    name = m.group("name").strip()
+    tech_raw = m.group("tech").strip()
+    year = (m.group("year") or "").strip()
+    tech = [t.strip() for t in re.split(r"[,/]", tech_raw) if t.strip()]
+    if not name or len(name) < 3:
+        return None
+    return name, tech, year
+
+
 # ---------------------------------------------------------------------------
 # Core plain-text parser (shared by PDF and DOCX paths)
 # ---------------------------------------------------------------------------
@@ -81,6 +136,19 @@ def _parse_plain_resume_text(text: str, source: str = "resume") -> Profile:
     Uses section-header detection + date-pattern heuristics to identify roles.
     Supports 1-line (Title  Company  Date), 2-line (Title+Company / Date),
     and 3-line (Title / Company / Date) role headers via 2-step lookahead.
+
+    Section anchoring (#101): the parser starts in 'preamble' and ignores any
+    title-shaped lines (the candidate's name etc.) until it sees a known
+    section header \u2014 so the name above the 'Experience' heading is never
+    parsed as a role title.
+
+    Disordered-text fallback: pdfminer-style column extraction can pool all
+    the date ranges at the top of the file and interleave bullets out of
+    order with project headers.  When we encounter a date-only line in the
+    experience section with no role context, we stash it in `orphan_dates`
+    and pair it positionally with the next role header we see that lacks
+    explicit dates.  Bullets that arrive before any role exists are dropped
+    silently (preferred over misattribution).
     """
     profile = Profile()
     _months_alt = (r"Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|"
@@ -92,8 +160,12 @@ def _parse_plain_resume_text(text: str, source: str = "resume") -> Profile:
     text = re.sub(r'(?<!\d)(\d{2,3}) (\d)(?!\d)', r'\1\2', text)
     lines = [line.strip() for line in text.splitlines()]
     n = len(lines)
-    section = "experience"
+    # #101 fix: start in 'preamble' so the candidate-name line at the top of
+    # the resume does not get treated as the title of an implicit first role.
+    section: Optional[str] = "preamble"
     current_role: Optional[Role] = None
+    # Pool of date ranges seen before any role header (pdfminer column order).
+    orphan_dates: list[tuple[str, str]] = []
 
     i = 0
     while i < n:
@@ -109,6 +181,19 @@ def _parse_plain_resume_text(text: str, source: str = "resume") -> Profile:
             current_role = None
             continue
 
+        # In the preamble (before the first section header) we ignore
+        # everything \u2014 the candidate's name, contact line, summary blurb etc.
+        # Exception: pdfminer column-extracted text often pools the date
+        # ranges on the first page above the section headers; we stash any
+        # bare date-range line for positional pairing with the first roles
+        # we encounter in the experience section.
+        if section is None or section == "preamble":
+            dm = _DATE_PATTERN.search(s)
+            if dm and dm.group(0).strip() == s.strip():
+                start_o, end_o = _parse_dates(dm.group(0))
+                orphan_dates.append((start_o, end_o))
+            continue
+
         if section == "experience":
             next1 = lines[i] if i < n else ""
             next2 = lines[i + 1] if i + 1 < n else ""
@@ -120,6 +205,15 @@ def _parse_plain_resume_text(text: str, source: str = "resume") -> Profile:
                 dm = date_here
                 pre = s[:dm.start()].strip(" |·–—-")
                 location = ""
+                company = ""
+                # If the line is *only* a date range with nothing in front,
+                # treat it as an orphan date for positional pairing later
+                # (pdfminer column-order extraction puts dates on their own
+                # lines — fix for #102 disordered case).
+                if not pre:
+                    start_o, end_o = _parse_dates(dm.group(0))
+                    orphan_dates.append((start_o, end_o))
+                    continue
                 colon_m = re.match(r'^(.+?)\s*:\s*(.+)$', pre)
                 if colon_m:
                     title = colon_m.group(1).strip()
@@ -139,9 +233,7 @@ def _parse_plain_resume_text(text: str, source: str = "resume") -> Profile:
                         and not _detect_section(next1)
                         and not _DATE_PATTERN.search(next1)
                         and not _is_bullet_line(next1)):
-                    loc_parts = re.split(r"\s{2,}", next1.strip())
-                    company = loc_parts[0].strip()
-                    location = loc_parts[1].strip() if len(loc_parts) > 1 else ""
+                    company, location = _split_company_location(next1)
                     i += 1
                 current_role = Role(title=title, company=company, start=start, end=end, location=location)
                 profile.experience.append(current_role)
@@ -173,18 +265,48 @@ def _parse_plain_resume_text(text: str, source: str = "resume") -> Profile:
 
             if date_n2 and next1 and not _detect_section(next1) and _like_title_line(s) and _like_title_line(next1):
                 title = s.strip()
-                company = next1.strip()
+                company, location = _split_company_location(next1)
                 d = _DATE_PATTERN.search(next2)
                 start, end = _parse_dates(d.group(0)) if d else ("", "")
-                current_role = Role(title=title, company=company, start=start, end=end, location="")
+                current_role = Role(title=title, company=company, start=start, end=end, location=location)
                 profile.experience.append(current_role)
                 i += 2
                 continue
 
-            if current_role and (s.startswith(("•", "-", "–", "*", "·", "○", "▪"))
-                                  or re.match(r'^(x|ffi|j)\s+\S', s)):
+            # Fixture-B path: title-only line, no date here / n1 / n2, next1
+            # looks like company (and optional location).  Pair positionally
+            # with the next orphan date if we have one stashed.
+            if (_like_title_line(s) and next1 and not _is_bullet_line(next1)
+                    and not _detect_section(next1)
+                    and not _DATE_PATTERN.search(s)):
+                # Check next1 looks like a company line (no bullet, no date).
+                if not _DATE_PATTERN.search(next1):
+                    company, location = _split_company_location(next1)
+                    # If location is empty and the line after next is a bare
+                    # location like 'Dallas, TX', consume it.
+                    consumed = 1
+                    next2_raw = lines[i + 1] if i + 1 < n else ""
+                    if (not location and next2_raw
+                            and not _is_bullet_line(next2_raw)
+                            and not _detect_section(next2_raw)
+                            and not _DATE_PATTERN.search(next2_raw)
+                            and re.match(r"^[A-Z][A-Za-z .'\-]+,\s*[A-Z][A-Za-z .]{1,30}$", next2_raw.strip())):
+                        location = next2_raw.strip()
+                        consumed = 2
+                    start, end = ("", "")
+                    if orphan_dates:
+                        start, end = orphan_dates.pop(0)
+                    current_role = Role(
+                        title=s.strip(), company=company, start=start, end=end, location=location,
+                    )
+                    profile.experience.append(current_role)
+                    i += consumed
+                    continue
+
+            if (s.startswith(("•", "-", "–", "*", "·", "○", "▪"))
+                    or re.match(r'^(x|ffi|j)\s+\S', s)):
                 txt = re.sub(r'^(?:•|[-–*·○▪]|ffi|x|j)\s+', '', s).strip()
-                if len(txt) > 15:
+                if len(txt) > 15 and current_role is not None:
                     bullet = Bullet(
                         text=txt,
                         metrics=extract_metrics(txt),
@@ -193,6 +315,8 @@ def _parse_plain_resume_text(text: str, source: str = "resume") -> Profile:
                         confidence=score_confidence(txt),
                     )
                     current_role.bullets.append(bullet)
+                # else: bullet with no role context — drop silently rather
+                # than mis-attribute (fix for #104).
 
         elif section == "education":
             if not s.startswith(("•", "-")):
@@ -223,18 +347,57 @@ def _parse_plain_resume_text(text: str, source: str = "resume") -> Profile:
                         profile.skills.append(sk)
 
         elif section == "projects":
-            is_proj_header = (s.startswith(("•", "-", "–", "*", "·", "○", "▪"))
-                              or re.match(r'^x\s+\S', s))
-            clean_s = s.lstrip("•-–*·○▪x ").strip()
-            if is_proj_header and len(clean_s) > 3:
-                proj = Project(name=clean_s, tech=extract_tools(clean_s))
+            # Project header detection (fix for #103):
+            #   1. 'Name | Tech [Year]' pipe-separated header  (Jake template)
+            #   2. Short bullet-line that names a project (legacy format,
+            #      e.g. '- Real-time Risk Analytics')
+            # Long bullet lines are treated as project bullets, never names.
+            is_bullet = (s.startswith(("•", "-", "–", "*", "·", "○", "▪"))
+                         or bool(re.match(r'^x\s+\S', s)))
+            header = None if is_bullet else _parse_project_header(s)
+            if header is not None:
+                name, tech, year = header
+                proj = Project(name=name, tech=tech, date=year)
                 profile.projects.append(proj)
-            elif profile.projects and clean_s and len(clean_s) > 10:
-                last = profile.projects[-1]
-                bul = Bullet(text=clean_s, metrics=extract_metrics(clean_s),
-                             tools=extract_tools(clean_s), evidence_source=source,
-                             confidence=score_confidence(clean_s))
-                last.bullets.append(bul)
+                continue
+
+            if is_bullet:
+                txt = re.sub(r'^(?:•|[-–*·○▪]|ffi|x|j)\s+', '', s).strip()
+                # Short bullet lines (no terminal punctuation, ≤ 60 chars) are
+                # treated as project names — the legacy '- Project Name' form.
+                # Longer bullet lines (or ones containing a period) are bullets
+                # belonging to the most recent project.
+                looks_like_name = (
+                    txt and len(txt) <= 60
+                    and not txt.endswith((".", "%"))
+                    and not re.match(r"^(Built|Implemented|Designed|Architected|Developed|Created|Engineered|Migrated|Reengineered|Led|Managed|Reduced|Improved)\b", txt)
+                )
+                if looks_like_name:
+                    proj = Project(name=txt, tech=extract_tools(txt))
+                    profile.projects.append(proj)
+                elif txt and len(txt) > 10 and profile.projects:
+                    bul = Bullet(
+                        text=txt, metrics=extract_metrics(txt),
+                        tools=extract_tools(txt), evidence_source=source,
+                        confidence=score_confidence(txt),
+                    )
+                    profile.projects[-1].bullets.append(bul)
+                continue
+
+            # Non-bullet, non-pipe line in projects section.  Bare year
+            # lines (e.g. '2026' on its own line in column-extracted text)
+            # are skipped.  Other plain text is treated as a wrap-continuation
+            # of the previous bullet (Jake template wraps long bullets).
+            clean_s = s.strip()
+            if not clean_s or re.fullmatch(r"\d{4}(?:\s*[-–]\s*\d{4})?", clean_s):
+                continue
+            if (profile.projects and profile.projects[-1].bullets
+                    and len(clean_s) > 10):
+                last_bul = profile.projects[-1].bullets[-1]
+                last_bul.text = (last_bul.text + " " + clean_s).strip()
+                # Re-extract metrics/tools from the merged text.
+                last_bul.metrics = extract_metrics(last_bul.text)
+                last_bul.tools = extract_tools(last_bul.text)
 
         elif section == "certifications":
             clean_s = s.strip(" -•*·")
