@@ -6,7 +6,7 @@ import ThemeToggle from "@/components/ThemeToggle";
 export const metadata: Metadata = {
   title: "DSA Patterns — Master Coding Interviews",
   description:
-    "Practice 20+ DSA patterns with 250+ curated LeetCode problems. Track your progress, search across patterns, and master coding interviews.",
+    "Practice 20 essential DSA patterns with 320+ curated LeetCode problems drawn from the AlgoMaster 300, Blind 75, NeetCode 150, and Top Interview 150. Track your progress, search and filter, master coding interviews.",
 };
 
 const themeInitScript = `

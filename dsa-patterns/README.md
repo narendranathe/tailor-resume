@@ -1,9 +1,14 @@
 # DSA Patterns
 
 A practice site for mastering Data Structures & Algorithms by pattern.
-20 essential patterns, ~260 curated LeetCode problems, progress tracked locally in your browser.
+20 essential patterns, **322 unique LeetCode problems** (338 slots across patterns —
+some problems naturally belong to more than one), progress tracked locally in your browser.
 
-Inspired by AlgoMaster, Grokking the Coding Interview, NeetCode 150, and Blind 75.
+The catalog is derived from the public, MIT-licensed
+[`AlgoMaster-io/leetcode-solutions`](https://github.com/AlgoMaster-io/leetcode-solutions)
+repository (the AlgoMaster 300), cross-referenced with Grokking the Coding Interview,
+NeetCode 150, Blind 75, and LeetCode Top Interview 150. Pattern categorization is
+maintained in `data/patterns.ts` — every LeetCode link is a direct slug match.
 
 ## Stack
 

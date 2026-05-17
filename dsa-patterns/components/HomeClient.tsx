@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { patterns, totalPatterns, totalProblems } from "@/data/patterns";
+import { patterns, totalPatterns, totalProblems, uniqueProblemCount } from "@/data/patterns";
 import PatternCard from "@/components/PatternCard";
 import { getAll, resetAll } from "@/lib/storage";
 
@@ -41,7 +41,8 @@ export default function HomeClient() {
             Master <span className="text-brand-600">DSA Patterns</span>
           </h1>
           <p className="mt-3 max-w-2xl text-slate-600 dark:text-slate-300">
-            {totalPatterns} essential patterns. {totalProblems} curated LeetCode problems.
+            {totalPatterns} essential patterns. {uniqueProblemCount} unique LeetCode problems
+            ({totalProblems} slots — some show up under more than one pattern).
             Solve, check off, and watch your progress grow.
           </p>
           <div className="mt-5 flex flex-wrap items-center gap-3">

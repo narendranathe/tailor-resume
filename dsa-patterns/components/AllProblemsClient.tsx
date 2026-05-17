@@ -51,7 +51,8 @@ export default function AllProblemsClient() {
       <header className="mb-6">
         <h1 className="text-2xl font-bold tracking-tight">All problems</h1>
         <p className="text-slate-600 dark:text-slate-300 mt-1">
-          {allProblems.length} curated LeetCode problems across {patterns.length} patterns.
+          {allProblems.length} problem slots across {patterns.length} patterns
+          {" — drawn from the AlgoMaster 300, Blind 75, NeetCode 150, and Top Interview 150."}
         </p>
       </header>
 
