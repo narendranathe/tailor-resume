@@ -26,6 +26,12 @@ COPY .claude/skills/tailor-resume/scripts/ ./.claude/skills/tailor-resume/script
 COPY .claude/skills/tailor-resume/templates/ ./.claude/skills/tailor-resume/templates/
 
 EXPOSE 8080
-HEALTHCHECK --interval=30s --timeout=5s CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')" || exit 1
+# Healthcheck: verify the MCP server is bound and accepting connections.
+# Uses a plain TCP connect instead of an HTTP request because the
+# streamable-http MCP transport at /mcp may respond with non-2xx codes to
+# bare GET requests (it expects session-aware POST/SSE clients). On Fly.io
+# the platform-level healthcheck in fly.toml is what actually gates traffic.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s \
+    CMD python -c "import socket; s=socket.socket(); s.settimeout(3); s.connect(('localhost', 8080)); s.close()" || exit 1
 
 CMD ["python", "server.py"]
