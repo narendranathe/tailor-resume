@@ -115,9 +115,10 @@ def execute(config: TailorConfig) -> TailorResult:
     cover_letter_path: Optional[str] = None
     if config.cover_letter:
         from cover_letter_renderer import build_cover_letter  # noqa: E402
-        cover_letter_tex = build_cover_letter(
+        cover_letter_result = build_cover_letter(
             profile_dict, report, config.header, jd_text=config.jd_text
         )
+        cover_letter_tex = cover_letter_result.tex
         cover_letter_path = str(Path(config.output_path).parent / "cover_letter.tex")
         Path(cover_letter_path).write_text(cover_letter_tex, encoding="utf-8")
 
@@ -174,9 +175,10 @@ def execute_text(
     cover_letter_path: Optional[str] = None
     if cover_letter:
         from cover_letter_renderer import build_cover_letter  # noqa: E402
-        cover_letter_tex = build_cover_letter(
+        cover_letter_result = build_cover_letter(
             profile_dict, report, header or {}, jd_text=jd_text
         )
+        cover_letter_tex = cover_letter_result.tex
         cover_letter_path = str(Path(output_path).parent / "cover_letter.tex")
         Path(cover_letter_path).write_text(cover_letter_tex, encoding="utf-8")
 

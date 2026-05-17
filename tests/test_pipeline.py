@@ -90,6 +90,53 @@ class TestExecuteText:
         assert result.cover_letter_tex is None
         assert result.cover_letter_path is None
 
+    def test_cover_letter_true_writes_tex_file(self, tmp_path, monkeypatch):
+        """
+        Regression for the bug fixed in issue #87.
+
+        Before the fix, pipeline wrote the entire `CoverLetterResult` dataclass
+        to disk instead of its `.tex` attribute, raising `TypeError` at runtime.
+        This test pins the contract: `execute_text(..., cover_letter=True)`
+        must produce a real .tex file on disk containing the rendered cover
+        letter, and `result.cover_letter_tex` must be the same string.
+        """
+        from pathlib import Path
+
+        import cover_letter_renderer
+
+        # Stub out the renderer so the test doesn't depend on Claude/Anthropic
+        # or the template internals — it's the call-site contract under test.
+        sentinel_tex = (
+            "\\documentclass{article}\n\\begin{document}\n"
+            "PARA ONE.\n\nPARA TWO.\n\\end{document}\n"
+        )
+
+        def fake_build_cover_letter(profile_dict, report, header, jd_text, method="claude"):
+            return cover_letter_renderer.CoverLetterResult(
+                tex=sentinel_tex,
+                txt="PARA ONE.\n\nPARA TWO.\n",
+                docx_path=None,
+                method_used="template",
+                word_count=4,
+            )
+
+        monkeypatch.setattr(
+            cover_letter_renderer, "build_cover_letter", fake_build_cover_letter
+        )
+
+        from pipeline import execute_text
+        result = execute_text(
+            JD_TEXT,
+            BLOB_TEXT,
+            output_path=str(tmp_path / "r.tex"),
+            cover_letter=True,
+        )
+
+        assert result.cover_letter_tex == sentinel_tex
+        assert result.cover_letter_path is not None
+        on_disk = Path(result.cover_letter_path).read_text(encoding="utf-8")
+        assert on_disk == sentinel_tex
+
 
 # ---------------------------------------------------------------------------
 # TailorConfig / TailorResult data classes
