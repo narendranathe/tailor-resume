@@ -156,3 +156,81 @@ def test_method_case_insensitive():
     from ats_scorer import score
     result = score(JD, RESUME, method="FORMULA")
     assert result.method_used == "formula"
+
+
+# ---------------------------------------------------------------------------
+# Issue #86 — get_scorer factory + embedding fallback to formula on hard failure
+# ---------------------------------------------------------------------------
+class TestGetScorerFactory:
+    def test_factory_returns_formula_callable(self):
+        from ats_scorer import _score_formula, get_scorer
+        assert get_scorer("formula") is _score_formula
+
+    def test_factory_returns_embedding_callable(self):
+        from ats_scorer import _score_embedding, get_scorer
+        assert get_scorer("embedding") is _score_embedding
+
+    def test_factory_returns_claude_callable(self):
+        from ats_scorer import _score_claude, get_scorer
+        assert get_scorer("claude") is _score_claude
+
+    def test_factory_case_insensitive(self):
+        from ats_scorer import _score_formula, get_scorer
+        assert get_scorer("FORMULA") is _score_formula
+        assert get_scorer(" Embedding ") is __import__("ats_scorer")._score_embedding
+
+    def test_factory_unknown_method_raises(self):
+        from ats_scorer import get_scorer
+        with pytest.raises(ValueError, match="Unknown method"):
+            get_scorer("bogus")
+
+    def test_factory_callable_returns_ats_score_result(self):
+        from ats_scorer import get_scorer
+        scorer = get_scorer("formula")
+        result = scorer(JD, RESUME)
+        assert isinstance(result, ATSScoreResult)
+
+
+class TestEmbeddingFallbackToFormula:
+    """Issue #86: _score_embedding must fall back to formula on hard failure."""
+
+    def test_embed_raising_triggers_formula_fallback(self):
+        from ats_scorer import score
+
+        def boom(_text):
+            raise RuntimeError("simulated embed backend down")
+
+        with patch("rag_store.embed", side_effect=boom):
+            result = score(JD, RESUME, method="embedding")
+
+        assert isinstance(result, ATSScoreResult)
+        assert result.method_used == "embedding (formula fallback)"
+        assert 0 <= result.score <= 100
+        # Reasoning should explain why the fallback happened
+        assert "embed() raised" in result.reasoning
+        # Formula score is set to mirror the actual score on this path
+        assert result.formula_score == result.score
+
+    def test_empty_embed_triggers_formula_fallback(self):
+        from ats_scorer import score
+        with patch("rag_store.embed", return_value=[]):
+            result = score(JD, RESUME, method="embedding")
+        assert result.method_used == "embedding (formula fallback)"
+        assert "returned empty" in result.reasoning
+
+    def test_fallback_recommendations_come_from_formula(self):
+        """Fallback path must still surface recommendations so the UI stays useful."""
+        from ats_scorer import score
+        with patch("rag_store.embed", side_effect=RuntimeError("nope")):
+            result = score(JD, RESUME, method="embedding")
+        assert isinstance(result.recommendations, list)
+        # Formula always produces at least one recommendation against a non-trivial JD/resume
+        assert len(result.recommendations) > 0
+
+    def test_normal_embedding_path_unchanged(self):
+        """Sanity: a successful embed still returns 'embedding' method_used."""
+        from ats_scorer import score
+        with patch("rag_store.embed", return_value=[0.5] * 256):
+            result = score(JD, RESUME, method="embedding")
+        assert result.method_used == "embedding"
+        assert "fallback" not in result.method_used
