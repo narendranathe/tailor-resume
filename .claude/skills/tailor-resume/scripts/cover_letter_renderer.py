@@ -35,6 +35,9 @@ _TEMPLATE_PATH = Path(__file__).parent.parent / "templates" / "cover_letter_temp
 
 _MAX_WORDS = 250
 
+# Pinned Claude model — owner-approved, cheap/fast for short structured prose.
+_CLAUDE_MODEL = "claude-haiku-4-5-20251001"
+
 
 @dataclass
 class CoverLetterResult:
@@ -51,6 +54,7 @@ def build_cover_letter(
     header: dict,
     jd_text: str,
     method: str = "claude",
+    out_dir: Optional[str] = None,
 ) -> CoverLetterResult:
     """
     Generate a 2-paragraph cover letter.
@@ -61,13 +65,14 @@ def build_cover_letter(
         header: Contact info dict (name, email, phone, linkedin, ...).
         jd_text: Full job description text.
         method: "claude" (LLM, falls back to template) or "template" (rule-based).
+        out_dir: Optional directory for the .docx file. If None, a temp file is used.
 
     Returns:
         CoverLetterResult with .tex, .txt, .docx_path, .method_used, .word_count.
     """
     if method == "claude":
-        return _build_claude(profile_dict, report, header, jd_text)
-    return _build_template(profile_dict, report, header, jd_text)
+        return _build_claude(profile_dict, report, header, jd_text, out_dir=out_dir)
+    return _build_template(profile_dict, report, header, jd_text, out_dir=out_dir)
 
 
 def _build_claude(
@@ -75,6 +80,7 @@ def _build_claude(
     report,
     header: dict,
     jd_text: str,
+    out_dir: Optional[str] = None,
 ) -> CoverLetterResult:
     """Option: Claude writes the paragraphs. Falls back to template on any exception."""
     try:
@@ -101,7 +107,7 @@ def _build_claude(
 
         client = anthropic.Anthropic()
         resp = client.messages.create(
-            model="claude-sonnet-4-6",
+            model=_CLAUDE_MODEL,
             max_tokens=400,
             messages=[{"role": "user", "content": prompt}],
         )
@@ -116,10 +122,10 @@ def _build_claude(
         para2 = parts[1] if len(parts) > 1 else ""
 
         para1, para2 = _enforce_word_limit(para1, para2, _MAX_WORDS)
-        return _assemble(para1, para2, header, method_used="claude")
+        return _assemble(para1, para2, header, method_used="claude", out_dir=out_dir)
 
     except Exception:
-        result = _build_template(profile_dict, report, header, jd_text)
+        result = _build_template(profile_dict, report, header, jd_text, out_dir=out_dir)
         return CoverLetterResult(
             tex=result.tex,
             txt=result.txt,
@@ -134,6 +140,7 @@ def _build_template(
     report,
     header: dict,
     jd_text: str,
+    out_dir: Optional[str] = None,
 ) -> CoverLetterResult:
     """Rule-based generation. Deterministic, zero external deps."""
     company = _extract_company_from_jd(jd_text)
@@ -185,7 +192,7 @@ def _build_template(
         )
 
     para1, para2 = _enforce_word_limit(para1, para2, _MAX_WORDS)
-    return _assemble(para1, para2, header, method_used="template")
+    return _assemble(para1, para2, header, method_used="template", out_dir=out_dir)
 
 
 def _extract_company_from_jd(jd_text: str) -> str:
@@ -262,7 +269,13 @@ def _write_docx(para1: str, para2: str, header: dict, output_path: str) -> None:
         pass  # python-docx not installed; caller checks docx_path is None
 
 
-def _assemble(para1: str, para2: str, header: dict, method_used: str) -> CoverLetterResult:
+def _assemble(
+    para1: str,
+    para2: str,
+    header: dict,
+    method_used: str,
+    out_dir: Optional[str] = None,
+) -> CoverLetterResult:
     """Build CoverLetterResult from two plain-text paragraphs."""
     # Build LaTeX
     template = _TEMPLATE_PATH.read_text(encoding="utf-8") if _TEMPLATE_PATH.exists() else _MINIMAL_TEX
@@ -284,16 +297,21 @@ def _assemble(para1: str, para2: str, header: dict, method_used: str) -> CoverLe
     txt = f"{para1}\n\n{para2}"
     word_count = len(txt.split())
 
-    # DOCX — written to a temp-adjacent path
+    # DOCX — written to out_dir/cover_letter.docx when out_dir given, else tempfile.
     docx_path: Optional[str] = None
     try:
-        import tempfile
-        tmp = tempfile.NamedTemporaryFile(suffix=".docx", delete=False)
-        tmp.close()
-        _write_docx(para1, para2, header, tmp.name)
-        from pathlib import Path as _P
-        if _P(tmp.name).stat().st_size > 0:
-            docx_path = tmp.name
+        if out_dir:
+            out_dir_path = Path(out_dir)
+            out_dir_path.mkdir(parents=True, exist_ok=True)
+            target = str(out_dir_path / "cover_letter.docx")
+        else:
+            import tempfile
+            tmp = tempfile.NamedTemporaryFile(suffix=".docx", delete=False)
+            tmp.close()
+            target = tmp.name
+        _write_docx(para1, para2, header, target)
+        if Path(target).exists() and Path(target).stat().st_size > 0:
+            docx_path = target
     except Exception:
         docx_path = None
 
