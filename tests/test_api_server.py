@@ -4,14 +4,26 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 sys.path.insert(0, str(Path(__file__).parent.parent / ".claude" / "skills" / "tailor-resume" / "scripts"))
 
+import api_server  # noqa: E402
 from api_server import app  # noqa: E402
 
 client = TestClient(app)
 HEADERS = {"X-API-Key": "dev-key"}
+
+
+@pytest.fixture(autouse=True)
+def _reset_rate_buckets():
+    """Wipe in-memory rate-limit buckets between tests so the shared TestClient
+    (which always presents as the same anonymous IP) does not accumulate across
+    unrelated tests."""
+    api_server._rate_buckets.clear()
+    yield
+    api_server._rate_buckets.clear()
 
 _JD = "Senior Data Engineer. Spark, Kafka, Airflow, Delta Lake, CI/CD, schema drift."
 _BLOB = (
@@ -342,3 +354,329 @@ def test_cover_letter_pdf_path_returned_on_success():
     data = resp.json()
     assert data["pdf_path"] is not None
     assert data["pdf_path"].endswith(".pdf")
+
+
+# ---------------------------------------------------------------------------
+# GET /vault/{user_id}
+# ---------------------------------------------------------------------------
+
+
+def _make_vault_entry(name: str = "Acme_Resume_20260517_120000"):
+    from vault_client import VaultEntry
+    return VaultEntry(
+        version_tag="Jane_Acme_Resume",
+        filename=name,
+        branch="vault/jane",
+        company="Acme",
+        role="Resume",
+        ats_score=82.0,
+        committed_at="20260517_120000",
+        github_path=f"{name}.tex",
+        commit_sha="abc123",
+    )
+
+
+def test_vault_list_happy_path(monkeypatch):
+    monkeypatch.setattr(
+        "api_server.vault_client.list_versions",
+        lambda uid, **_: [_make_vault_entry()],
+    )
+    resp = client.get("/vault/jane", headers=HEADERS)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["user_id"] == "jane"
+    assert data["count"] == 1
+    assert data["entries"][0]["filename"] == "Acme_Resume_20260517_120000"
+    assert data["entries"][0]["version_tag"] == "Jane_Acme_Resume"
+
+
+def test_vault_list_empty(monkeypatch):
+    monkeypatch.setattr("api_server.vault_client.list_versions", lambda uid, **_: [])
+    resp = client.get("/vault/nobody", headers=HEADERS)
+    assert resp.status_code == 200
+    assert resp.json() == {"user_id": "nobody", "count": 0, "entries": []}
+
+
+def test_vault_list_bad_api_key():
+    resp = client.get("/vault/jane", headers={"X-API-Key": "wrong"})
+    assert resp.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# GET /vault/{user_id}/{filename}
+# ---------------------------------------------------------------------------
+
+
+def test_vault_get_tex_happy_path(monkeypatch):
+    monkeypatch.setattr(
+        "api_server.vault_client.get_version",
+        lambda uid, fn: r"\documentclass{article}\begin{document}hi\end{document}",
+    )
+    resp = client.get("/vault/jane/Acme_Resume_20260517_120000", headers=HEADERS)
+    assert resp.status_code == 200
+    assert resp.headers["content-type"].startswith("application/x-tex")
+    assert "attachment" in resp.headers["content-disposition"]
+    assert "Acme_Resume_20260517_120000.tex" in resp.headers["content-disposition"]
+    assert r"\documentclass" in resp.text
+
+
+def test_vault_get_tex_not_found(monkeypatch):
+    monkeypatch.setattr("api_server.vault_client.get_version", lambda uid, fn: "")
+    resp = client.get("/vault/jane/missing", headers=HEADERS)
+    assert resp.status_code == 404
+
+
+def test_vault_get_tex_bad_api_key():
+    resp = client.get("/vault/jane/foo", headers={"X-API-Key": "wrong"})
+    assert resp.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# GET /vault/{user_id}/{filename}/pdf
+# ---------------------------------------------------------------------------
+
+
+def test_vault_get_pdf_happy_path(monkeypatch):
+    monkeypatch.setattr(
+        "api_server.vault_client.get_version",
+        lambda uid, fn: "\\documentclass{article}\\begin{document}hi\\end{document}",
+    )
+    monkeypatch.setattr(
+        "api_server._compile_pdf",
+        lambda path: (_write_fake_pdf(path), None),
+    )
+    resp = client.get(
+        "/vault/jane/Acme_Resume_20260517_120000/pdf?first_name=Jane",
+        headers=HEADERS,
+    )
+    assert resp.status_code == 200
+    assert resp.headers["content-type"] == "application/pdf"
+    assert "Jane.pdf" in resp.headers["content-disposition"]
+    assert resp.content.startswith(b"%PDF") or resp.content == b"fake pdf bytes"
+
+
+def _write_fake_pdf(tex_path: str) -> str:
+    pdf_path = tex_path.replace(".tex", ".pdf")
+    Path(pdf_path).write_bytes(b"fake pdf bytes")
+    return pdf_path
+
+
+def test_vault_get_pdf_default_filename(monkeypatch):
+    monkeypatch.setattr("api_server.vault_client.get_version", lambda uid, fn: r"\dummy")
+    monkeypatch.setattr("api_server._compile_pdf", lambda path: (_write_fake_pdf(path), None))
+    resp = client.get("/vault/jane/Acme_Resume_20260517_120000/pdf", headers=HEADERS)
+    assert resp.status_code == 200
+    assert "Acme_Resume_20260517_120000.pdf" in resp.headers["content-disposition"]
+
+
+def test_vault_get_pdf_not_found(monkeypatch):
+    monkeypatch.setattr("api_server.vault_client.get_version", lambda uid, fn: "")
+    resp = client.get("/vault/jane/missing/pdf", headers=HEADERS)
+    assert resp.status_code == 404
+
+
+def test_vault_get_pdf_pdflatex_absent_returns_501(monkeypatch):
+    monkeypatch.setattr("api_server.vault_client.get_version", lambda uid, fn: r"\dummy")
+    monkeypatch.setattr("api_server._compile_pdf", lambda path: (None, None))
+    resp = client.get("/vault/jane/Acme_Resume/pdf", headers=HEADERS)
+    assert resp.status_code == 501
+    body = resp.json()
+    # FastAPI wraps dict details under "detail"
+    detail = body["detail"]
+    assert detail["error"] == "PDF compilation unavailable"
+    assert "TeX Live" in detail["detail"]
+
+
+def test_vault_get_pdf_compile_warning_returns_500(monkeypatch):
+    monkeypatch.setattr("api_server.vault_client.get_version", lambda uid, fn: r"\dummy")
+    monkeypatch.setattr(
+        "api_server._compile_pdf",
+        lambda path: (None, "pdflatex exit 1: boom"),
+    )
+    resp = client.get("/vault/jane/Acme_Resume/pdf", headers=HEADERS)
+    assert resp.status_code == 500
+    assert "pdflatex" in resp.json()["detail"]
+
+
+def test_vault_get_pdf_bad_api_key():
+    resp = client.get("/vault/jane/foo/pdf", headers={"X-API-Key": "wrong"})
+    assert resp.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# Rate limiter
+# ---------------------------------------------------------------------------
+
+
+def test_rate_limiter_blocks_21st_request_same_user():
+    payload = {
+        "jd_text": _JD,
+        "resume_text": "Spark Kafka Airflow pipelines.",
+    }
+    # /score uses the anonymous IP bucket — fire 20 then expect 21st to fail.
+    for i in range(api_server._RATE_LIMIT_PER_MINUTE):
+        resp = client.post("/score", json=payload, headers=HEADERS)
+        assert resp.status_code == 200, f"request {i+1} unexpectedly failed: {resp.status_code}"
+    resp = client.post("/score", json=payload, headers=HEADERS)
+    assert resp.status_code == 429
+    assert "Retry-After" in resp.headers
+    assert int(resp.headers["Retry-After"]) >= 1
+
+
+def test_rate_limiter_independent_buckets_per_user():
+    """Different user_ids must have independent buckets."""
+    payload_a = {
+        "jd_text": _JD,
+        "artifact_text": _BLOB,
+        "artifact_format": "blob",
+        "user_id": "alice",
+    }
+    payload_b = {
+        "jd_text": _JD,
+        "artifact_text": _BLOB,
+        "artifact_format": "blob",
+        "user_id": "bob",
+    }
+    # Fill alice's bucket to the limit
+    for _ in range(api_server._RATE_LIMIT_PER_MINUTE):
+        resp = client.post("/generate", json=payload_a, headers=HEADERS)
+        assert resp.status_code == 200
+    # alice is now blocked
+    resp = client.post("/generate", json=payload_a, headers=HEADERS)
+    assert resp.status_code == 429
+    # bob still gets through
+    resp = client.post("/generate", json=payload_b, headers=HEADERS)
+    assert resp.status_code == 200
+
+
+def test_rate_limiter_evicts_old_entries(monkeypatch):
+    """Timestamps older than the window get evicted and free up slots."""
+    real_time = api_server.time.time
+    fake_now = {"t": real_time()}
+
+    def fake_time():
+        return fake_now["t"]
+
+    monkeypatch.setattr(api_server.time, "time", fake_time)
+
+    payload = {"jd_text": _JD, "resume_text": "Spark Kafka."}
+    # Fill the bucket
+    for _ in range(api_server._RATE_LIMIT_PER_MINUTE):
+        resp = client.post("/score", json=payload, headers=HEADERS)
+        assert resp.status_code == 200
+    # 21st request blocked
+    assert client.post("/score", json=payload, headers=HEADERS).status_code == 429
+    # Jump forward past the window — all old entries should evict
+    fake_now["t"] += api_server._RATE_WINDOW_SECONDS + 1
+    resp = client.post("/score", json=payload, headers=HEADERS)
+    assert resp.status_code == 200
+
+
+def test_rate_limiter_health_endpoint_exempt():
+    """/health is exempt from rate limiting — hammer it past the threshold."""
+    for _ in range(api_server._RATE_LIMIT_PER_MINUTE + 5):
+        assert client.get("/health").status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# BackgroundTasks: vault push
+# ---------------------------------------------------------------------------
+
+
+def test_generate_vault_version_is_null_by_default(monkeypatch):
+    """Default mode: vault push runs in BackgroundTasks; response sees vault_version=None."""
+    called = {"push": False}
+
+    def fake_push(**kwargs):
+        called["push"] = True
+        from vault_client import VaultEntry
+        return VaultEntry(
+            version_tag="Jane_Acme_Resume",
+            filename="x",
+            branch="vault/jane",
+            company="Acme",
+            role="Resume",
+            ats_score=80.0,
+            committed_at="t",
+            github_path="x.tex",
+        )
+
+    monkeypatch.setattr("api_server.push_version", fake_push)
+    payload = {
+        "jd_text": _JD,
+        "artifact_text": _BLOB,
+        "artifact_format": "blob",
+        "name": "Jane Smith",
+        "email": "jane@example.com",
+    }
+    resp = client.post("/generate", json=payload, headers=HEADERS)
+    assert resp.status_code == 200
+    data = resp.json()
+    # Background task DID run (TestClient waits for them) but vault_version is
+    # still null because we set it before queueing the task.
+    assert data["vault_version"] is None
+    assert called["push"] is True  # background task fired after response was built
+
+
+def test_generate_vault_inline_populates_version_tag(monkeypatch):
+    """vault_inline=True forces synchronous push; vault_version is set."""
+    from vault_client import VaultEntry
+
+    def fake_push(**kwargs):
+        return VaultEntry(
+            version_tag="Jane_Acme_Resume",
+            filename="x",
+            branch="vault/jane",
+            company="Acme",
+            role="Resume",
+            ats_score=80.0,
+            committed_at="t",
+            github_path="x.tex",
+        )
+
+    monkeypatch.setattr("api_server.push_version", fake_push)
+    payload = {
+        "jd_text": _JD,
+        "artifact_text": _BLOB,
+        "artifact_format": "blob",
+        "name": "Jane Smith",
+        "email": "jane@example.com",
+        "vault_inline": True,
+    }
+    resp = client.post("/generate", json=payload, headers=HEADERS)
+    assert resp.status_code == 200
+    assert resp.json()["vault_version"] == "Jane_Acme_Resume"
+
+
+def test_generate_vault_inline_swallows_push_failure(monkeypatch):
+    """If the inline vault push raises, /generate still returns 200 with vault_version=None."""
+    def boom(**kwargs):
+        raise RuntimeError("vault is down")
+
+    monkeypatch.setattr("api_server.push_version", boom)
+    payload = {
+        "jd_text": _JD,
+        "artifact_text": _BLOB,
+        "artifact_format": "blob",
+        "vault_inline": True,
+    }
+    resp = client.post("/generate", json=payload, headers=HEADERS)
+    assert resp.status_code == 200
+    assert resp.json()["vault_version"] is None
+
+
+def test_vault_push_safe_swallows_exceptions(monkeypatch):
+    """The background-task wrapper must never propagate exceptions."""
+    def boom(**kwargs):
+        raise RuntimeError("vault is down")
+
+    monkeypatch.setattr("api_server.push_version", boom)
+    # Should not raise
+    api_server._vault_push_safe(
+        user_id="jane",
+        company="Acme",
+        role="Resume",
+        tex_content="x",
+        metadata={},
+        first_name="Jane",
+    )
