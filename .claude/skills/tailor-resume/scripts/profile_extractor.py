@@ -282,7 +282,12 @@ def parse_blob(text: str, source: str = "blob") -> Profile:
 
     role_header_re = re.compile(r"(?:company|employer|org(?:anization)?)[:\s]+(.+)", re.IGNORECASE)
     title_re = re.compile(r"(?:title|position|role)[:\s]+(.+)", re.IGNORECASE)
-    date_re = re.compile(r"(?:dates?|period|tenure)[:\s]+(.+?)[\s]*(?:–|-|to)[\s]*(.+)", re.IGNORECASE)
+    # Date separator: dashes, or whitespace-bounded "to" so the substring "to"
+    # inside month names like "October" doesn't get treated as a separator.
+    date_re = re.compile(
+        r"(?:dates?|period|tenure)[:\s]+(.+?)\s*(?:[–—-]|(?<=\s)to(?=\s))\s*(.+)",
+        re.IGNORECASE,
+    )
 
     for line in lines:
         s = line.strip()
