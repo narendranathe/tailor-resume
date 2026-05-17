@@ -1,1 +1,20 @@
+# Streamlit Cloud requirements file — picked up automatically because it sits
+# next to the main module (streamlit_app/app.py). When this file exists,
+# Streamlit Cloud IGNORES the root requirements.txt entirely, so every
+# runtime dep needed by the app must be listed here too.
+#
+# Keep in sync with the root `requirements.txt`.
+
+# Web UI
 streamlit>=1.32.0
+
+# File parsing — PDF and DOCX upload support.
+# Order matters on some build environments: pdfminer.six first so the heavier
+# native build runs early; if it fails the run aborts loudly instead of
+# partway through downstream deps.
+pdfminer.six>=20221105
+pypdf>=4.0
+python-docx>=1.0
+
+# LLM-based enrichment (Claude for bullet quality + user preference feedback)
+anthropic>=0.27
