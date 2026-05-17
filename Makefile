@@ -9,13 +9,14 @@ OUT         := out
 MCP_SERVER  := $(SCRIPTS)/mcp_server.py
 MCP_GLOBAL  := $(HOME)/.claude/.mcp.json
 
-.PHONY: setup setup-all install-global demo test test-cov lint render mcp-serve mcp-install-global sync-global serve clean help
+.PHONY: setup setup-all install-global demo test test-cov lint render mcp-serve mcp-install-global sync-global serve clean check-deps help
 
 help:
 	@echo "Available targets:"
 	@echo "  install-global       Copy skill + register MCP + install optional deps (run once after clone)"
 	@echo "  setup                Install core dev dependencies (pytest, ruff)"
 	@echo "  setup-all            Install core + optional deps (pinecone, openai, mcp)"
+	@echo "  check-deps           Smoke-test critical runtime deps (fails CI on missing pdfminer/pypdf)"
 	@echo "  demo                 Run the full pipeline on sample fixtures -> $(OUT)/resume.tex"
 	@echo "  test                 Run the test suite"
 	@echo "  test-cov             Run tests with coverage report"
@@ -30,6 +31,9 @@ setup:
 
 setup-all:
 	$(PYTHON) -m pip install -r requirements.txt -r requirements-optional.txt
+
+check-deps:
+	$(PYTHON) scripts/check_deployment_readiness.py
 
 demo: $(OUT)
 	$(PYTHON) $(SCRIPTS)/profile_extractor.py \
