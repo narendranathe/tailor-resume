@@ -1,0 +1,16 @@
+[run]
+# Coverage configuration for the tailor-resume skill.
+#
+# We omit subtrees that are CLI/optional-backend code paths and
+# would need integration tests (real Anthropic API, real Pinecone,
+# real PDF fixtures, etc.) rather than unit tests to exercise.
+# Excluding them keeps the --cov-fail-under gate meaningful for
+# the code we have actually chosen to test.
+#
+# When you wire integration tests for any of these modules, drop
+# them from the omit list and bump --cov-fail-under accordingly.
+
+omit =
+    .claude/skills/tailor-resume/scripts/claude_vision_extractor.py
+    .claude/skills/tailor-resume/scripts/parsers/*
+    .claude/skills/tailor-resume/scripts/stores/*
