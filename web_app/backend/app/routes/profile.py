@@ -28,6 +28,10 @@ class ProfileResponse(BaseModel):
     profile: Dict[str, Any]
 
 
+class ProfilePatchRequest(BaseModel):
+    patch: Dict[str, Any]
+
+
 # ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
@@ -85,9 +89,44 @@ async def delete_profile(user_id: str = Depends(get_current_user)):
     store.delete(user_id)
 
 
+@router.patch("/profile", response_model=ProfileResponse)
+async def patch_profile(
+    payload: ProfilePatchRequest,
+    user_id: str = Depends(get_current_user),
+):
+    """
+    Apply a partial Profile patch — Epic #91 (M4).
+
+    Deep-merges dicts; lists in `patch` replace lists in storage.
+    404 if no Profile is stored yet.
+    """
+    store = get_profile_store()
+    existing = store.get(user_id)
+    if existing is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Profile not found")
+
+    merged = _deep_merge(existing, payload.patch or {})
+    store.upsert(user_id, merged)
+    return ProfileResponse(user_id=user_id, profile=merged)
+
+
 # ---------------------------------------------------------------------------
 # Helper
 # ---------------------------------------------------------------------------
+
+def _deep_merge(base: Dict[str, Any], patch: Dict[str, Any]) -> Dict[str, Any]:
+    """Recursive dict merge: dicts merge, lists/scalars in patch replace base."""
+    result: Dict[str, Any] = dict(base)
+    for key, value in patch.items():
+        if (
+            isinstance(value, dict)
+            and isinstance(result.get(key), dict)
+        ):
+            result[key] = _deep_merge(result[key], value)
+        else:
+            result[key] = value
+    return result
+
 
 def _parse_to_dict(artifact_bytes: bytes, artifact_format: str) -> Dict[str, Any]:
     """Parse resume bytes to a Profile dict using the tailor-resume parsers."""

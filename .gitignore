@@ -27,6 +27,11 @@ htmlcov/
 *.swp
 *.swo
 
+# Node — frontend deps and build output never go in git
+node_modules/
+web_app/frontend/dist/
+package-lock.json
+
 # macOS
 .DS_Store
 
