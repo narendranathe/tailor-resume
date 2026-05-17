@@ -1,24 +1,22 @@
-# Core — stdlib only for parsing/analysis/rendering
-# Python 3.11+ required
+# Runtime dependencies for the tailor-resume Streamlit app and CLI pipeline.
+# Streamlit Community Cloud installs this file at build time.
+# Dev-only tooling (pytest, ruff, reportlab) lives in requirements-dev.txt.
+#
+# Python version is pinned in `runtime.txt` (python-3.11) for Streamlit Cloud
+# compatibility — pdfminer.six's cffi/cryptography stack has had wheel-build
+# issues on Python 3.13 that silently abort the install, leaving the
+# deployment without pdfminer.six AND without pypdf.
 
-# Streamlit web app (also used by Streamlit Community Cloud)
+# Web UI
 streamlit>=1.32.0
 
-# File parsing — PDF and DOCX upload support
+# File parsing — PDF and DOCX upload support.
+# Order matters on some build environments: pdfminer.six first so the heavier
+# native build runs early; if it fails the run aborts loudly instead of
+# partway through optional deps.
+pdfminer.six>=20221105
 pypdf>=4.0
 python-docx>=1.0
 
 # LLM-based enrichment (Claude for bullet quality + user preference feedback)
 anthropic>=0.27
-
-# LLM-free PDF extraction — reads ToUnicode CMap for correct Unicode (LaTeX CMR fonts)
-pdfminer.six>=20221105
-
-# Dev / testing
-pytest>=7.4
-pytest-cov>=4.1
-ruff>=0.4
-# Used by tests/fixtures/parsers/_make_pdf.py to regenerate sample.pdf;
-# also imported lazily by tests/test_parsers_integration.py if the binary
-# fixture is missing.
-reportlab>=4.0
