@@ -1,0 +1,37 @@
+JANE DOE
+Senior Data Engineer
+jane.doe@example.com | 555-123-4567 | linkedin.com/in/janedoe | Dallas, TX
+
+PROFESSIONAL EXPERIENCE
+
+Senior Data Engineer, DataWorks Inc, Austin, TX                              March 2022 – Present
+- Built a governed semantic layer on Azure Databricks with Delta Lake, defining 40+ KPI metrics across Finance, ML, and BI teams; cut metric discrepancies from 12 weekly incidents to zero
+- Owned CI/CD end-to-end through Azure DevOps for 15 data pipelines, compressing deployment cycles from 8 weeks to 6 days
+- Reengineered ETL from full-table reloads to CDC incremental merge upserts on Delta Lake, cutting batch runtime from 45 min to 9 min and compute costs by 68%
+- Migrated Spark jobs to AKS with HPA, consolidating 18 nodes to 4-8 dynamic, reducing monthly cloud spend by $4,100
+
+Data Engineer, Acme Analytics Corp, Chicago, IL                       August 2019 – February 2022
+- Engineered Azure AI Anomaly Detector pipelines selecting optimal algorithms per time-series profile, achieving 95%+ accuracy across 200+ monitored metrics
+- Implemented tunable alert thresholds per service, filtering 300 weekly non-actionable P3 alerts and improving signal-to-noise ratio from 1:6 to 1:1.3
+- Built Elasticsearch enterprise search indexing 150K+ internal documents, reducing support desk volume by 75%
+- Developed Python ETL framework with Pytest unit tests and GitHub Actions CI, reducing production data defects by 40% year-over-year
+
+EDUCATION
+University of Missouri-Columbia, Columbia, MO
+Master of Science in Computer Science                                          August 2017 – May 2019
+
+SKILLS
+Languages: Python, SQL, Bash, Java, Scala
+Data: Spark, Kafka, Airflow, dbt, Delta Lake
+Cloud: Azure, AWS, Databricks
+DevOps: Docker, Kubernetes, Terraform, CI/CD
+
+CERTIFICATIONS
+- AWS Certified Solutions Architect — Associate
+- Databricks Certified Data Engineer Professional
+
+PROJECTS
+- Real-time Risk Analytics Platform
+  Built a Kafka + Spark streaming pipeline ingesting 1M events/sec with sub-second alerting using Python and Redis
+- Fraud Detection ML Pipeline
+  Designed an MLflow + Airflow pipeline training XGBoost models on 50M transactions with 92% precision

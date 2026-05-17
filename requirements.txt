@@ -18,3 +18,7 @@ pdfminer.six>=20221105
 pytest>=7.4
 pytest-cov>=4.1
 ruff>=0.4
+# Used by tests/fixtures/parsers/_make_pdf.py to regenerate sample.pdf;
+# also imported lazily by tests/test_parsers_integration.py if the binary
+# fixture is missing.
+reportlab>=4.0
