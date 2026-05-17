@@ -18,7 +18,7 @@ from __future__ import annotations
 import math
 import sys
 from pathlib import Path
-from typing import Tuple
+from typing import Callable, Tuple
 
 _SCRIPTS = Path(__file__).parent
 if str(_SCRIPTS) not in sys.path:
@@ -36,6 +36,25 @@ def _cosine(a: list, b: list) -> float:
     return dot / (na * nb)
 
 
+def get_scorer(method: str) -> Callable[[str, str], ATSScoreResult]:
+    """
+    Factory: return the scoring function for `method`.
+
+    Mirrors the `rag_store.get_store()` pattern so callers can hold a
+    reference to a specific engine without re-dispatching on every call.
+
+    Raises ValueError for unknown methods.
+    """
+    method = method.lower().strip()
+    if method == "formula":
+        return _score_formula
+    if method == "embedding":
+        return _score_embedding
+    if method == "claude":
+        return _score_claude
+    raise ValueError(f"Unknown method '{method}'. Use: formula | embedding | claude")
+
+
 def score(jd: str, resume: str, method: str = "formula") -> ATSScoreResult:
     """
     Score resume alignment against a JD using the specified engine.
@@ -50,20 +69,8 @@ def score(jd: str, resume: str, method: str = "formula") -> ATSScoreResult:
 
     Raises:
         ValueError: for unknown method values.
-        NotImplementedError: for method="claude" until Issue #63 is implemented.
     """
-    method = method.lower().strip()
-
-    if method == "formula":
-        return _score_formula(jd, resume)
-
-    if method == "embedding":
-        return _score_embedding(jd, resume)
-
-    if method == "claude":
-        return _score_claude(jd, resume)
-
-    raise ValueError(f"Unknown method '{method}'. Use: formula | embedding | claude")
+    return get_scorer(method)(jd, resume)
 
 
 def _score_formula(jd: str, resume: str) -> ATSScoreResult:
@@ -89,12 +96,39 @@ def _score_embedding(jd: str, resume: str) -> ATSScoreResult:
     Option A: Cosine similarity between JD and resume embeddings.
     Uses OpenAI text-embedding-3-small if OPENAI_API_KEY is set,
     otherwise falls back to TF-IDF character n-gram hashing (dim=128).
+
+    Falls all the way back to the formula scorer if `embed()` raises or
+    returns an empty vector — in that case `method_used` is set to
+    `"embedding (formula fallback)"` so callers can tell the difference.
     """
     # Lazy import — avoids side effects at module load; rag_store may print warnings
     from rag_store import embed  # noqa: E402
 
-    jd_vec = embed(jd)
-    resume_vec = embed(resume)
+    try:
+        jd_vec = embed(jd)
+        resume_vec = embed(resume)
+    except Exception:
+        fallback = _score_formula(jd, resume)
+        return ATSScoreResult(
+            score=fallback.score,
+            reasoning=f"{fallback.reasoning} [embed() raised; used formula]",
+            bullet_scores=[],
+            recommendations=fallback.recommendations,
+            method_used="embedding (formula fallback)",
+            formula_score=fallback.score,
+        )
+
+    if not jd_vec or not resume_vec:
+        fallback = _score_formula(jd, resume)
+        return ATSScoreResult(
+            score=fallback.score,
+            reasoning=f"{fallback.reasoning} [embed() returned empty; used formula]",
+            bullet_scores=[],
+            recommendations=fallback.recommendations,
+            method_used="embedding (formula fallback)",
+            formula_score=fallback.score,
+        )
+
     similarity = _cosine(jd_vec, resume_vec)
     embedding_score = max(0, min(100, int(similarity * 100)))
 
