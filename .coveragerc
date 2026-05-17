@@ -1,16 +1,13 @@
 [run]
 # Coverage configuration for the tailor-resume skill.
 #
-# We omit subtrees that are CLI/optional-backend code paths and
-# would need integration tests (real Anthropic API, real Pinecone,
-# real PDF fixtures, etc.) rather than unit tests to exercise.
-# Excluding them keeps the --cov-fail-under gate meaningful for
-# the code we have actually chosen to test.
+# parsers/* and stores/* and claude_vision_extractor.py are now covered by
+# integration tests landed via issue #75. The single remaining omission is
+# parsers/pdf_extractor.py (31% covered), tracked separately by issue #79
+# for the heavier Claude-vision / multi-backend fallback paths.
 #
-# When you wire integration tests for any of these modules, drop
-# them from the omit list and bump --cov-fail-under accordingly.
+# When pdf_extractor.py clears 80%, drop it from omit and bump
+# --cov-fail-under in .github/workflows/ci.yml accordingly.
 
 omit =
-    .claude/skills/tailor-resume/scripts/claude_vision_extractor.py
-    .claude/skills/tailor-resume/scripts/parsers/*
-    .claude/skills/tailor-resume/scripts/stores/*
+    .claude/skills/tailor-resume/scripts/parsers/pdf_extractor.py
