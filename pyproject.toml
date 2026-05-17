@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "tailor-resume"
-version = "0.1.0"
+version = "0.1.1"
 description = "ATS-optimized, recruiter-ready resume tailoring from the command line"
 readme = "README.md"
 license = { text = "MIT" }
