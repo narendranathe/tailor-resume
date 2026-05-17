@@ -25,7 +25,9 @@ Output shape (matches profile_extractor ProjectEntry):
 """
 from __future__ import annotations
 
+import base64
 import json
+import logging
 import os
 import re
 import sys
@@ -33,7 +35,9 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
+
+_LOG = logging.getLogger(__name__)
 
 _SCRIPTS = Path(__file__).parent
 if str(_SCRIPTS) not in sys.path:
@@ -255,6 +259,245 @@ def inject_github_projects(
     profile["projects"].extend(new_projects)
 
     return profile
+
+
+# ---------------------------------------------------------------------------
+# Issue #66: ingest_repo(url, token) — flat bullet list from a single repo URL
+# ---------------------------------------------------------------------------
+
+_REPO_URL_RE = re.compile(
+    r"^(?:https?://)?(?:www\.)?github\.com/([^/\s]+)/([^/\s]+?)(?:\.git)?/?$",
+    re.IGNORECASE,
+)
+
+
+def _parse_repo_url(url: str) -> Optional[Tuple[str, str]]:
+    """Extract (owner, repo) from a GitHub URL.
+
+    Handles trailing slashes, .git suffix, http/https, and optional www.
+    Returns None for unparseable input.
+    """
+    if not url or not isinstance(url, str):
+        return None
+    m = _REPO_URL_RE.match(url.strip())
+    if not m:
+        return None
+    owner, repo = m.group(1), m.group(2)
+    if not owner or not repo:
+        return None
+    return owner, repo
+
+
+def _ingest_headers(token: Optional[str] = None) -> Dict[str, str]:
+    """Build headers for the ingest_repo API path (separate from module _headers
+    so that the explicit `token` arg always wins over the GITHUB_TOKEN env var).
+    """
+    h = {
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+        "User-Agent": "tailor-resume/2.0",
+    }
+    if token:
+        h["Authorization"] = f"Bearer {token}"
+    return h
+
+
+def _api_get(url: str, token: Optional[str] = None) -> Optional[Dict]:
+    """GET a GitHub API URL with the User-Agent + optional Bearer auth.
+
+    Returns parsed JSON or None on any error (HTTP, URL, decode).
+    """
+    req = urllib.request.Request(url, headers=_ingest_headers(token))
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            raw = resp.read()
+    except urllib.error.HTTPError as exc:
+        _LOG.warning("github_ingester: HTTP %s fetching %s", exc.code, url)
+        return None
+    except urllib.error.URLError as exc:
+        _LOG.warning("github_ingester: URL error %s fetching %s", exc.reason, url)
+        return None
+    except Exception as exc:  # pragma: no cover - defensive
+        _LOG.warning("github_ingester: unexpected error fetching %s: %s", url, exc)
+        return None
+
+    if not raw:
+        return {}
+    try:
+        return json.loads(raw)
+    except (ValueError, TypeError) as exc:
+        _LOG.warning("github_ingester: malformed JSON from %s: %s", url, exc)
+        return None
+
+
+def _fetch_repo_meta(owner: str, repo: str, token: Optional[str] = None) -> Optional[Dict]:
+    return _api_get(f"{_GITHUB_API}/repos/{owner}/{repo}", token)
+
+
+def _fetch_repo_readme(owner: str, repo: str, token: Optional[str] = None) -> str:
+    """Return UTF-8 decoded README content or empty string if absent/error."""
+    data = _api_get(f"{_GITHUB_API}/repos/{owner}/{repo}/readme", token)
+    if not data or not isinstance(data, dict):
+        return ""
+    encoded = data.get("content")
+    if not encoded or not isinstance(encoded, str):
+        return ""
+    try:
+        return base64.b64decode(encoded.replace("\n", "")).decode("utf-8", errors="replace")
+    except (ValueError, TypeError, base64.binascii.Error) as exc:
+        _LOG.warning("github_ingester: failed to decode README: %s", exc)
+        return ""
+
+
+def _bullets_from_readme(readme: str) -> List[str]:
+    """Pull all markdown bullet lines from a README (no cap, no length filter).
+
+    Used as the input to parse_blob — let parse_blob's downstream consumers
+    decide which bullets matter.
+    """
+    out: List[str] = []
+    for raw in readme.splitlines():
+        line = raw.strip()
+        m = re.match(r"^[-*+•]\s+(.+)$", line) or re.match(r"^\d+\.\s+(.+)$", line)
+        if not m:
+            continue
+        text = m.group(1).strip()
+        # Strip surrounding markdown emphasis markers but keep the content.
+        text = re.sub(r"[`*_]+", "", text).strip()
+        if text:
+            out.append(text)
+    return out
+
+
+def _bullet_to_dict(bullet) -> Dict:
+    """Convert a profile_extractor Bullet dataclass to the issue-spec dict shape."""
+    return {
+        "text": getattr(bullet, "text", ""),
+        "metrics": list(getattr(bullet, "metrics", []) or []),
+        "tools": list(getattr(bullet, "tools", []) or []),
+        "evidence_source": "github",
+        "confidence": "medium",
+    }
+
+
+def _description_bullet(description: str, tools: Optional[List[str]] = None) -> Dict:
+    """Build a fallback bullet from the repo description alone."""
+    try:
+        from text_utils import extract_metrics as _xm, extract_tools as _xt
+        metrics = _xm(description)
+        tool_list = list(tools or []) + _xt(description)
+        # Dedupe while preserving order.
+        seen = set()
+        deduped_tools = []
+        for t in tool_list:
+            if t not in seen:
+                seen.add(t)
+                deduped_tools.append(t)
+        tool_list = deduped_tools
+    except Exception:  # pragma: no cover - defensive
+        metrics = []
+        tool_list = list(tools or [])
+    return {
+        "text": description,
+        "metrics": metrics,
+        "tools": tool_list,
+        "evidence_source": "github",
+        "confidence": "medium",
+    }
+
+
+def ingest_repo(url: str, token: Optional[str] = None) -> List[Dict]:
+    """Fetch README + description for a GitHub repo URL and return project bullets.
+
+    Public repos work without ``token``; supplying a PAT raises the rate limit
+    and (in v3) will permit private repos.
+
+    Returns a list of dicts shaped like::
+
+        {"text": ..., "metrics": [...], "tools": [...],
+         "evidence_source": "github", "confidence": "medium"}
+
+    Behaviour:
+        * Invalid URL → ``[]`` with a logged warning.
+        * No README and no description → ``[]``.
+        * No README but description present → single description-only bullet.
+        * Any HTTP/URL/JSON error → ``[]`` with a logged warning.
+        * Never raises ``urllib`` errors to the caller.
+    """
+    parsed = _parse_repo_url(url)
+    if parsed is None:
+        _LOG.warning("github_ingester: invalid GitHub repo URL: %r", url)
+        return []
+    owner, repo = parsed
+
+    meta = _fetch_repo_meta(owner, repo, token=token)
+    if not isinstance(meta, dict):
+        # Network/HTTP failure already logged in _api_get.
+        return []
+
+    description = (meta.get("description") or "").strip()
+    language = (meta.get("language") or "").strip()
+    topics = meta.get("topics") or []
+    if not isinstance(topics, list):
+        topics = []
+    base_tools: List[str] = []
+    if language:
+        base_tools.append(language)
+    for t in topics:
+        if isinstance(t, str) and t and t not in base_tools:
+            base_tools.append(t)
+
+    readme = _fetch_repo_readme(owner, repo, token=token)
+
+    # Extract bullet candidates from the README and feed them — together with
+    # the description as a synthetic header bullet — through parse_blob using
+    # the repo name as the "company" so the lines get associated with a role.
+    readme_bullets = _bullets_from_readme(readme) if readme else []
+
+    bullets: List[Dict] = []
+
+    if readme_bullets:
+        # Construct a synthetic blob parse_blob can consume.
+        try:
+            from profile_extractor import parse_blob
+            blob_lines = [f"Company: {repo}"]
+            blob_lines.extend(f"- {b}" for b in readme_bullets)
+            profile = parse_blob("\n".join(blob_lines), source="github")
+            for role in profile.experience:
+                for b in role.bullets:
+                    bullets.append(_bullet_to_dict(b))
+        except Exception as exc:  # pragma: no cover - defensive
+            _LOG.warning("github_ingester: parse_blob failed: %s", exc)
+
+    if description:
+        # Prepend the description bullet so it leads the list.
+        bullets.insert(0, _description_bullet(description, tools=base_tools))
+
+    if not bullets:
+        return []
+
+    return bullets
+
+
+def ingest_repo_project(url: str, token: Optional[str] = None) -> Optional[Dict]:
+    """Convenience wrapper that returns a *project entry* dict (with title
+    extracted from the repo name) ready to append to ``profile['projects']``.
+
+    Returns None for invalid URLs or fetch errors. Returns a project dict with
+    an empty ``bullets`` list if the repo has neither description nor README.
+    """
+    parsed = _parse_repo_url(url)
+    if parsed is None:
+        _LOG.warning("github_ingester: invalid GitHub repo URL: %r", url)
+        return None
+    _owner, repo_name = parsed
+    bullets = ingest_repo(url, token=token)
+    return {
+        "name": repo_name,
+        "bullets": bullets,
+        "source": "github",
+        "url": url,
+    }
 
 
 # ---------------------------------------------------------------------------
