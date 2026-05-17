@@ -32,3 +32,10 @@ htmlcov/
 
 # Local RAG store (SQLite fallback)
 ~/.tailor_resume/
+
+# Claude Code agent worktrees (created by Agent isolation: worktree)
+.claude/worktrees/
+
+# Auto-generated parser test fixtures (created by tests/fixtures/parsers/_make_*.py)
+tests/fixtures/parsers/sample.docx
+tests/fixtures/parsers/sample.pdf
