@@ -30,6 +30,9 @@ jobs:
       - name: Install optional dependencies (mcp, pinecone, openai)
         run: pip install -r requirements-optional.txt
 
+      - name: Deployment readiness check (critical deps installed)
+        run: python scripts/check_deployment_readiness.py
+
       - name: Lint with ruff
         run: python -m ruff check .claude/skills/tailor-resume/scripts/ tests/
 

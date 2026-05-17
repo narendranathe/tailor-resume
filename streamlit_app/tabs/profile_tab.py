@@ -50,12 +50,28 @@ def render():
 
     # ---- File upload -------------------------------------------------------
     if input_mode == "Upload file":
+        # Surface missing critical PDF deps as a hard error (not a soft warning)
+        # so the user knows uploads will silently produce garbage if they go ahead.
+        _scripts_dir = os.path.join(_REPO, "scripts")
+        if _scripts_dir not in sys.path:
+            sys.path.insert(0, _scripts_dir)
         try:
-            import pdfminer  # noqa: F401
+            from check_deployment_readiness import check_all, critical_missing
+            checks = check_all()
+            missing = critical_missing(checks)
+            for c in missing:
+                st.error(
+                    f"❌ Missing critical dependency `{c.package}` — {c.impact} "
+                    f"Fix: `{c.install_hint}`"
+                )
         except ImportError:
-            st.warning(
-                "PDF parsing quality is degraded — run `pip install pdfminer.six` for best results."
-            )
+            # Fallback to the inline check if the readiness module isn't present.
+            try:
+                import pdfminer  # noqa: F401
+            except ImportError:
+                st.warning(
+                    "PDF parsing quality is degraded — run `pip install pdfminer.six` for best results."
+                )
         if not os.environ.get("ANTHROPIC_API_KEY"):
             st.info(
                 "Tip: Set ANTHROPIC_API_KEY to enable AI-powered PDF parsing — "
