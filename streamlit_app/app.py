@@ -1,3 +1,5 @@
+# Streamlit Cloud cache-bust: 2026-05-17 — forces source refresh after #106/#108
+# (parser fixes + correct requirements.txt) didn't apply due to stale source cache.
 import sys
 import os
 
