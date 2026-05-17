@@ -1,0 +1,15 @@
+# Dev / testing tooling.
+# Not installed by Streamlit Cloud or production Docker images — keeps
+# their builds lean and isolates wheel-build problems to the dev image only.
+
+# Test framework + coverage
+pytest>=7.4
+pytest-cov>=4.1
+
+# Linter
+ruff>=0.4
+
+# Used by tests/fixtures/parsers/_make_pdf.py to regenerate sample.pdf;
+# also imported lazily by tests/test_parsers_integration.py if the binary
+# fixture is missing.
+reportlab>=4.0

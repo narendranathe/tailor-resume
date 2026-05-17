@@ -27,10 +27,10 @@ help:
 	@echo "  clean                Remove generated output files"
 
 setup:
-	$(PYTHON) -m pip install -r requirements.txt
+	$(PYTHON) -m pip install -r requirements.txt -r requirements-dev.txt
 
 setup-all:
-	$(PYTHON) -m pip install -r requirements.txt -r requirements-optional.txt
+	$(PYTHON) -m pip install -r requirements.txt -r requirements-dev.txt -r requirements-optional.txt
 
 check-deps:
 	$(PYTHON) scripts/check_deployment_readiness.py
