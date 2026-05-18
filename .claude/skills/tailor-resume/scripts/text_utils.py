@@ -18,22 +18,54 @@ from resume_types import TOOL_VOCAB
 # ---------------------------------------------------------------------------
 # Metric extraction
 # ---------------------------------------------------------------------------
+# Issue #112: previously the patterns used capture groups and a `.{3,40}` tail
+# for ranges, which (a) broke `re.findall` (it returned only the captured
+# groups, not the full match) and (b) let "from 3 months to 14 days by owning
+# CI/CD…" swallow 60+ chars of sentence trailer.
+#
+# New approach: use NON-capturing groups so `re.findall` yields the full match,
+# bound each pattern to a concise numeric phrase, and cap every result at
+# 30 chars as a safety net. The "from X to Y" range is built from explicit
+# number-unit atoms so it cannot cross conjunctions, sentence boundaries, or
+# additional digit tokens.
+_TIME_UNIT = r"(?:ms|s|sec|secs|min|mins|hour|hours|hr|hrs|day|days|week|weeks|month|months|year|years)"
+_VOLUME_UNIT = r"(?:rows?|users?|events?|requests?|tps|rps|qps|metrics?|records?|transactions?)"
+# A single concise "number-with-unit" atom — number, optional +, optional unit
+# word. Anchored on a digit boundary; the unit (if any) must be one short word.
+_NUM_UNIT_ATOM = rf"\d+(?:\.\d+)?\+?\s?(?:%|{_TIME_UNIT}|{_VOLUME_UNIT})"
+
 METRIC_PATTERNS = [
-    r"\b\d+(\.\d+)?\s?%",                        # percentages
-    r"\$\s?\d[\d,]*(\.\d+)?[kmb]?",               # dollar amounts
-    r"\b\d+[kmb]?\+?\s?(rows|users|events|tps|rps|requests)",  # volume
-    r"\b\d+\s?(ms|s|sec|min|hours|days|weeks)\b", # time
-    r"\bfrom\b.{3,40}\bto\b.{3,40}",              # from X to Y
-    r"\b\d+x\b",                                   # multipliers
+    # Range: "<num unit> to <num unit>" — both sides bounded, no greedy gap.
+    rf"\b{_NUM_UNIT_ATOM}\s+to\s+{_NUM_UNIT_ATOM}\b",
+    # Percentages (e.g. 45%, 95%+, 12.5%)
+    r"\b\d+(?:\.\d+)?\s?%\+?",
+    # Dollar amounts (e.g. $4,100, $1.2M, $50k)
+    r"\$\s?\d[\d,]*(?:\.\d+)?[kmb]?",
+    # Volume metrics (e.g. 100+ TPS, 5M users, 200 metrics)
+    rf"\b\d+(?:\.\d+)?[kmb]?\+?\s?{_VOLUME_UNIT}\b",
+    # Time durations (e.g. 3 months, 14 days, 45 min, 200 ms)
+    rf"\b\d+(?:\.\d+)?\s?{_TIME_UNIT}\b",
+    # Multipliers (e.g. 10x)
+    r"\b\d+(?:\.\d+)?x\b",
 ]
+
+# Defensive cap — see issue #112. Any single metric longer than this is a sign
+# the regex over-matched and we drop it instead of returning a sentence trailer.
+_METRIC_MAX_LEN = 30
 
 
 def extract_metrics(text: str) -> List[str]:
     found: List[str] = []
     for pattern in METRIC_PATTERNS:
-        matches = re.findall(pattern, text, flags=re.IGNORECASE)
-        for m in matches:
-            found.append("".join(m) if isinstance(m, tuple) else m)
+        for m in re.findall(pattern, text, flags=re.IGNORECASE):
+            # `re.findall` returns strings when no group is captured and tuples
+            # when groups are captured — all our groups are non-capturing, so
+            # `m` is always a str. Keep the isinstance guard for safety.
+            value = "".join(m) if isinstance(m, tuple) else m
+            value = value.strip()
+            if not value or len(value) > _METRIC_MAX_LEN:
+                continue
+            found.append(value)
     return list(dict.fromkeys(found))  # dedupe, preserve order
 
 
