@@ -1559,10 +1559,27 @@ def _like_title_line(ln: str) -> bool:
 
 def _parse_plain_resume_text(text: str, source: str = "resume") -> Profile:
     """
-    Parse plain text extracted from PDF or DOCX.
-    Uses section-header detection + date-pattern heuristics to identify roles.
-    Supports 1-line (Title  Company  Date), 2-line (Title+Company / Date),
-    and 3-line (Title / Company / Date) role headers via 2-step lookahead.
+    Delegate to the modular `parsers.plain_parser._parse_plain_resume_text`.
+
+    This module's previous in-place implementation predated the parsers/
+    subpackage refactor and missed the Jake-template bug fixes from #106
+    (issues #101-#104). The duplicate body has been replaced with this
+    thin delegate so all callers — including legacy ones that imported
+    `_parse_plain_resume_text` from this module — automatically pick up
+    the up-to-date parser.
+
+    The pre-refactor body lives at `_parse_plain_resume_text_legacy`
+    below for any test that imports it directly.
+    """
+    from parsers.plain_parser import _parse_plain_resume_text as _impl
+    return _impl(text, source=source)
+
+
+def _parse_plain_resume_text_legacy(text: str, source: str = "resume") -> Profile:
+    """
+    Pre-#106 in-module implementation. Kept around in case any test imports it
+    directly; new callers should use `_parse_plain_resume_text` above which
+    routes to the modular `parsers.plain_parser` with the up-to-date fixes.
     """
     profile = Profile()
     # Fix OT1 en-dash encoded as ASCII 't' (LaTeX CMR font glyph 0x74).

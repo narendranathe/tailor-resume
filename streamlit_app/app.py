@@ -19,13 +19,21 @@ if os.path.exists(_ROOT_ENV):
 # Path setup — must happen before any local imports
 # Tries .claude/skills path first (local dev), falls back to tailor_resume/_scripts
 # (installed package path), so the app works in both environments.
+#
+# NOTE: order in this list is intentional. `sys.path.insert(0, ...)` puts each
+# successive item at position 0, so the LAST item in this list ends up FIRST
+# in sys.path. We want `.claude/skills/.../scripts` to win because it holds
+# the modular `parsers/` subpackage with the up-to-date parser fixes.
+# The monolithic `tailor_resume/_scripts/profile_extractor.py` is the
+# pre-refactor fallback and should only be used when `.claude/` is missing
+# (e.g. when installed as a pip package from PyPI).
 # ---------------------------------------------------------------------------
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _REPO = os.path.dirname(_HERE)
 
 _SCRIPTS_CANDIDATES = [
-    os.path.join(_REPO, ".claude", "skills", "tailor-resume", "scripts"),
-    os.path.join(_REPO, "tailor_resume", "_scripts"),
+    os.path.join(_REPO, "tailor_resume", "_scripts"),                       # fallback
+    os.path.join(_REPO, ".claude", "skills", "tailor-resume", "scripts"),   # preferred (last → first in sys.path)
 ]
 for _p in _SCRIPTS_CANDIDATES:
     if os.path.isdir(_p) and _p not in sys.path:

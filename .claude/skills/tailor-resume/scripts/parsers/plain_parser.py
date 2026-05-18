@@ -162,7 +162,17 @@ def _parse_plain_resume_text(text: str, source: str = "resume") -> Profile:
     n = len(lines)
     # #101 fix: start in 'preamble' so the candidate-name line at the top of
     # the resume does not get treated as the title of an implicit first role.
-    section: Optional[str] = "preamble"
+    # BUT: if the input has no recognisable section header anywhere (e.g. a
+    # bare role snippet fed to the parser by a unit test or a paste from a
+    # job-portal text box), fall back to the legacy default of starting in
+    # 'experience' so something gets parsed instead of nothing.
+    _text_lower = text.lower()
+    _has_any_section = any(
+        alias in _text_lower
+        for aliases in _SECTION_HEADERS.values()
+        for alias in aliases
+    )
+    section: Optional[str] = "preamble" if _has_any_section else "experience"
     current_role: Optional[Role] = None
     # Pool of date ranges seen before any role header (pdfminer column order).
     orphan_dates: list[tuple[str, str]] = []
