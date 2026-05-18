@@ -50,6 +50,53 @@ _OT1_ARTIFACT_ONLY = re.compile(r'^(ffi|j)\s*$')
 _OT1_ARTIFACT_PREFIX = re.compile(r'^(ffi|j)\s+')
 
 
+# Cities pdfminer.six is known to split with a stray internal space when the
+# source PDF uses a 2-column layout for the role header (issue #111).  The
+# rejoin is dictionary-driven so it is deterministic and will not over-merge
+# legitimately split text.  Keys are the split form (lowercase-comparable),
+# values are the rejoined canonical spelling.
+_PDFMINER_CITY_RESPLIT: dict = {
+    "Dal las": "Dallas",
+    "Rol la": "Rolla",
+    "Au stin": "Austin",
+    "Hou ston": "Houston",
+    "Chi cago": "Chicago",
+    "Phila delphia": "Philadelphia",
+    "Phoe nix": "Phoenix",
+    "San An tonio": "San Antonio",
+    "San Die go": "San Diego",
+    "San Jo se": "San Jose",
+}
+
+# Build a single alternation regex with word boundaries so the substitution is
+# one linear pass over the text (O(N) in text length, O(1) per match) rather
+# than a per-entry scan.  Longest patterns first so multi-word entries like
+# "San An tonio" win over any future single-word prefix overlap.
+_PDFMINER_CITY_RESPLIT_RE = re.compile(
+    r"\b(?:" + "|".join(
+        re.escape(k) for k in sorted(_PDFMINER_CITY_RESPLIT, key=len, reverse=True)
+    ) + r")\b"
+)
+
+
+def _normalize_pdfminer_split_cities(text: str) -> str:
+    """
+    Rejoin city names that pdfminer.six split with a stray internal space.
+
+    Example: ``"Dal las, TX"`` → ``"Dallas, TX"``.
+
+    Uses a fixed dictionary so the heuristic is deterministic — we never join
+    arbitrary lowercase fragments, only those known to occur as pdfminer
+    column-layout artifacts.  Word-boundary anchors prevent matches inside
+    longer tokens (e.g. ``"Pedal las"`` is preserved).
+    """
+    if not text or not _PDFMINER_CITY_RESPLIT:
+        return text
+    return _PDFMINER_CITY_RESPLIT_RE.sub(
+        lambda m: _PDFMINER_CITY_RESPLIT[m.group(0)], text
+    )
+
+
 def _apply_ot1(s: str) -> str:
     """Substitute OT1-encoded bytes/ligature chars with readable equivalents."""
     for src, dst in _OT1_MAP.items():
@@ -525,7 +572,7 @@ def _extract_pdf_text_pdfminer(data: bytes) -> str:
         for _, _, text in boxes:
             parts.extend(_box_lines(text))
 
-    return "\n".join(parts)
+    return _normalize_pdfminer_split_cities("\n".join(parts))
 
 
 # ---------------------------------------------------------------------------
