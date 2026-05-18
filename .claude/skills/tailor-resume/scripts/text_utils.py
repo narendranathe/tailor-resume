@@ -69,9 +69,44 @@ def extract_metrics(text: str) -> List[str]:
     return list(dict.fromkeys(found))  # dedupe, preserve order
 
 
+# ---------------------------------------------------------------------------
+# Tool extraction
+# ---------------------------------------------------------------------------
+# Issue #113: bare substring matching produced false positives — short acronyms
+# like "RAG", "AWS", "GCP", "DAX", "SQL" hit inside larger words ("tracking",
+# "aware", "logcap", "fedax", "mysqlite"). Fix: anchor every vocab entry with
+# `\b...\b`. For acronyms (all-uppercase or all-lowercase letter tokens) match
+# case-sensitively so e.g. "AWS" doesn't fire on "aws" inside "jaws"; for
+# regular and multi-word entries keep IGNORECASE so casing variants still match.
+def _is_acronym(token: str) -> bool:
+    """Treat all-uppercase or all-lowercase single-word vocab entries as acronyms.
+
+    Multi-word entries (containing whitespace) are never acronyms — they keep
+    IGNORECASE matching.
+    """
+    if any(c.isspace() for c in token):
+        return False
+    letters = [c for c in token if c.isalpha()]
+    if not letters:
+        return False
+    return all(c.isupper() for c in letters) or all(c.islower() for c in letters)
+
+
+def _compile_tool_patterns() -> List[tuple]:
+    """Pre-compile (tool, regex) pairs once at module load."""
+    compiled: List[tuple] = []
+    for tool in TOOL_VOCAB:
+        pattern = r"\b" + re.escape(tool) + r"\b"
+        flags = 0 if _is_acronym(tool) else re.IGNORECASE
+        compiled.append((tool, re.compile(pattern, flags)))
+    return compiled
+
+
+_TOOL_PATTERNS: List[tuple] = _compile_tool_patterns()
+
+
 def extract_tools(text: str) -> List[str]:
-    lower = text.lower()
-    return [t for t in TOOL_VOCAB if t.lower() in lower]
+    return [tool for tool, pat in _TOOL_PATTERNS if pat.search(text)]
 
 
 def score_confidence(text: str) -> str:
