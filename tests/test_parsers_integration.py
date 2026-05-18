@@ -415,6 +415,33 @@ class TestPlainParser:
         profile = parsers._parse_plain_resume_text(text)
         assert len(profile.projects) >= 1
 
+    def test_skills_section_respects_parenthesized_groups(self):
+        """Regression for #114: comma-split inside parens fragments skill entries.
+
+        Input has 'Elasticsearch (NoSQL)' and 'Azure (AKS, DevOps, Data Factory)'.
+        These must remain single skill tokens; the inner commas must NOT split
+        them into bogus entries like '(NoSQL)' or 'Data Factory)'.
+        """
+        parsers = _import_parsers()
+        text = (
+            "Skills\n"
+            "Platforms & Tools: Spark, Kafka, Airflow, Elasticsearch (NoSQL), "
+            "Azure (AKS, DevOps, Data Factory)\n"
+        )
+        profile = parsers._parse_plain_resume_text(text)
+        skills = profile.skills
+        # Whole grouped tokens preserved.
+        assert "Elasticsearch (NoSQL)" in skills
+        assert "Azure (AKS, DevOps, Data Factory)" in skills
+        # Bogus fragments must not appear.
+        assert "(NoSQL)" not in skills
+        assert "Azure (AKS" not in skills
+        assert "Data Factory)" not in skills
+        # Non-parenthesized siblings still parsed individually.
+        assert "Spark" in skills
+        assert "Kafka" in skills
+        assert "Airflow" in skills
+
 
 # ===========================================================================
 # DOCX extractor
