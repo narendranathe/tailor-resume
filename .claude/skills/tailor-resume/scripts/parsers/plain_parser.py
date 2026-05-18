@@ -111,6 +111,43 @@ _PROJECT_HEADER_RE = re.compile(
 )
 
 
+def _split_skills_respect_parens(s: str) -> list[str]:
+    """Split on commas/semicolons that are NOT inside parentheses.
+
+    Preserves grouped entries like 'Azure (AKS, DevOps)' as a single token,
+    so the skills section parser does not fragment them into bogus pieces
+    such as '(NoSQL)', 'Azure (AKS', or 'Data Factory)' (regression for #114).
+
+    Handles:
+      - empty input → []
+      - unmatched closing parens (depth clamped at 0)
+      - unmatched opening parens (commas after them are kept as part of the
+        single tail token, since paren depth never returns to 0)
+      - nested parens
+    """
+    parts: list[str] = []
+    buf: list[str] = []
+    depth = 0
+    for ch in s:
+        if ch == "(":
+            depth += 1
+            buf.append(ch)
+        elif ch == ")":
+            depth = max(0, depth - 1)
+            buf.append(ch)
+        elif ch in ",;" and depth == 0:
+            piece = "".join(buf).strip()
+            if piece:
+                parts.append(piece)
+            buf = []
+        else:
+            buf.append(ch)
+    tail = "".join(buf).strip()
+    if tail:
+        parts.append(tail)
+    return parts
+
+
 def _parse_project_header(ln: str) -> Optional[tuple[str, list, str]]:
     """If ln looks like a 'Name | Tech Year' project header, return
     (name, tech_list, year). Else return None."""
@@ -344,7 +381,9 @@ def _parse_plain_resume_text(text: str, source: str = "resume") -> Profile:
                     profile.education.append({"institution": s, "degree": "", "dates": "", "location": ""})
 
         elif section == "skills":
-            for sk in re.split(r"[,;]", s):
+            # #114: split on commas/semicolons that are NOT inside parens so
+            # entries like 'Azure (AKS, DevOps, Data Factory)' stay together.
+            for sk in _split_skills_respect_parens(s):
                 sk = sk.strip(" -*•·|")
                 colon_m = re.match(r"^[A-Za-z /&]+:\s*(.+)$", sk)
                 if colon_m:
