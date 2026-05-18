@@ -4,10 +4,14 @@ import os
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _REPO = os.path.dirname(os.path.dirname(_HERE))
 
-# Ensure both script locations are on sys.path (same as app.py)
+# Ensure both script locations are on sys.path (same as app.py).
+# Order matters: sys.path.insert(0, ...) means the LAST item wins.
+# We want `.claude/skills/.../scripts` (which contains the modular parsers/
+# subpackage with up-to-date parser fixes) to take precedence over the
+# monolithic fallback at `tailor_resume/_scripts/profile_extractor.py`.
 for _p in [
-    os.path.join(_REPO, ".claude", "skills", "tailor-resume", "scripts"),
-    os.path.join(_REPO, "tailor_resume", "_scripts"),
+    os.path.join(_REPO, "tailor_resume", "_scripts"),                       # fallback
+    os.path.join(_REPO, ".claude", "skills", "tailor-resume", "scripts"),   # preferred
 ]:
     if os.path.isdir(_p) and _p not in sys.path:
         sys.path.insert(0, _p)
