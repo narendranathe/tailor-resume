@@ -264,3 +264,85 @@ class TestExtractToolsDeterminism:
         assert "Spark" in tools
         assert "Kafka" in tools
         assert "AWS" in tools
+
+
+# ---------------------------------------------------------------------------
+# Follow-up: acronyms are now matched case-insensitively (word boundaries
+# already prevent the substring false positives that case-sensitivity used
+# to catch). Lowercase "sql" / "dbt" should now reach SQL / dbt in vocab.
+# ---------------------------------------------------------------------------
+class TestExtractToolsCaseInsensitiveAcronyms:
+    def test_lowercase_sql_matches_canonical_SQL(self):
+        tools = extract_tools("wrote sql queries against the warehouse")
+        assert "SQL" in tools
+
+    def test_lowercase_aws_matches_canonical_AWS(self):
+        tools = extract_tools("we deploy on aws")
+        assert "AWS" in tools
+
+    def test_uppercase_DBT_matches_canonical_dbt(self):
+        tools = extract_tools("Managed DBT models across teams")
+        assert "dbt" in tools
+
+    def test_case_variants_dedup_to_one_canonical_entry(self):
+        tools = extract_tools("python and Python and PYTHON")
+        assert tools.count("Python") == 1
+
+    def test_case_insensitive_does_not_break_boundary_protection(self):
+        """Boundaries alone are enough — IGNORECASE doesn't reintroduce
+        the issue #113 false-positive class."""
+        # "aws" inside "jaws" / "awesome" still rejected because boundary fails
+        tools = extract_tools("aware of awesome jaws of mysqlite caching")
+        assert "AWS" not in tools
+        assert "SQL" not in tools
+
+
+# ---------------------------------------------------------------------------
+# split_top_level — shared paren-aware delimiter splitter
+# (consolidates the same fix across plain_parser, latex_parser,
+#  profile_extractor — issue #114 follow-up)
+# ---------------------------------------------------------------------------
+from text_utils import split_top_level  # noqa: E402
+
+
+class TestSplitTopLevel:
+    def test_simple_comma_split(self):
+        assert split_top_level("a, b, c") == ["a", "b", "c"]
+
+    def test_preserves_parens(self):
+        assert split_top_level("Spark, Azure (AKS, DevOps), Kafka") == [
+            "Spark",
+            "Azure (AKS, DevOps)",
+            "Kafka",
+        ]
+
+    def test_preserves_nested_parens(self):
+        assert split_top_level("Foo, Bar (X, Y (Z, W)), Baz") == [
+            "Foo",
+            "Bar (X, Y (Z, W))",
+            "Baz",
+        ]
+
+    def test_semicolon_also_a_delimiter(self):
+        assert split_top_level("a; b, c") == ["a", "b", "c"]
+
+    def test_custom_delimiters(self):
+        assert split_top_level("a|b|c", delims="|") == ["a", "b", "c"]
+
+    def test_empty_input(self):
+        assert split_top_level("") == []
+
+    def test_unmatched_open_paren_tail_kept(self):
+        """When `(` never closes, depth never returns to 0; everything
+        after stays in the single tail token."""
+        assert split_top_level("Foo, Bar (X, Y") == ["Foo", "Bar (X, Y"]
+
+    def test_unmatched_close_paren_clamped(self):
+        """`)` with no matching `(` clamps depth at 0 and keeps splitting."""
+        assert split_top_level("Foo), Bar") == ["Foo)", "Bar"]
+
+    def test_strips_whitespace_around_entries(self):
+        assert split_top_level("  a  ,   b  ,c") == ["a", "b", "c"]
+
+    def test_drops_empty_entries(self):
+        assert split_top_level("a, , b, ,") == ["a", "b"]

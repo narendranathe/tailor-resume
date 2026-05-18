@@ -13,7 +13,12 @@ import re
 from typing import Optional
 
 from resume_types import Bullet, Profile, Project, Role
-from text_utils import extract_metrics, extract_tools, score_confidence
+from text_utils import (
+    extract_metrics,
+    extract_tools,
+    score_confidence,
+    split_top_level,
+)
 from parsers.normalizer import _dedupe, _parse_dates
 
 
@@ -111,41 +116,10 @@ _PROJECT_HEADER_RE = re.compile(
 )
 
 
-def _split_skills_respect_parens(s: str) -> list[str]:
-    """Split on commas/semicolons that are NOT inside parentheses.
-
-    Preserves grouped entries like 'Azure (AKS, DevOps)' as a single token,
-    so the skills section parser does not fragment them into bogus pieces
-    such as '(NoSQL)', 'Azure (AKS', or 'Data Factory)' (regression for #114).
-
-    Handles:
-      - empty input → []
-      - unmatched closing parens (depth clamped at 0)
-      - unmatched opening parens (commas after them are kept as part of the
-        single tail token, since paren depth never returns to 0)
-      - nested parens
-    """
-    parts: list[str] = []
-    buf: list[str] = []
-    depth = 0
-    for ch in s:
-        if ch == "(":
-            depth += 1
-            buf.append(ch)
-        elif ch == ")":
-            depth = max(0, depth - 1)
-            buf.append(ch)
-        elif ch in ",;" and depth == 0:
-            piece = "".join(buf).strip()
-            if piece:
-                parts.append(piece)
-            buf = []
-        else:
-            buf.append(ch)
-    tail = "".join(buf).strip()
-    if tail:
-        parts.append(tail)
-    return parts
+# Back-compat alias for any caller / test that imports the previous name.
+# The implementation now lives in text_utils.split_top_level so the same fix
+# applies to profile_extractor.py and latex_parser.py call sites.
+_split_skills_respect_parens = split_top_level
 
 
 def _parse_project_header(ln: str) -> Optional[tuple[str, list, str]]:

@@ -15,7 +15,7 @@ import re
 from typing import List, Optional, Tuple
 
 from resume_types import Bullet, Profile, Project, Role
-from text_utils import extract_metrics, extract_tools, score_confidence
+from text_utils import extract_metrics, extract_tools, score_confidence, split_top_level
 from parsers.normalizer import _dedupe, _parse_dates
 
 
@@ -184,7 +184,7 @@ def parse_latex(text: str, source: str = "latex_resume") -> Profile:
         name = parts[0].strip()
         tech_str = parts[1].strip() if len(parts) > 1 else ""
         date = _clean_latex(args[1]) if len(args) > 1 else ""
-        tech = [t.strip() for t in re.split(r"[,;]", tech_str) if t.strip()]
+        tech = split_top_level(tech_str)
         current_proj = Project(name=name, tech=tech, date=date)
         profile.projects.append(current_proj)
 
@@ -213,7 +213,7 @@ def parse_latex(text: str, source: str = "latex_resume") -> Profile:
     if skills_body:
         for m in re.finditer(r"\\textbf\{([^}]+)\}\{?:?\}?\s*([^\\\n]+)", skills_body):
             vals = m.group(2)
-            for sk in re.split(r"[,;]", vals):
+            for sk in split_top_level(vals):
                 sk = sk.strip(" \\{}$|")
                 if sk and len(sk) > 1:
                     profile.skills.append(sk)

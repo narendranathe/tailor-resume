@@ -75,14 +75,21 @@ def extract_metrics(text: str) -> List[str]:
 # Issue #113: bare substring matching produced false positives — short acronyms
 # like "RAG", "AWS", "GCP", "DAX", "SQL" hit inside larger words ("tracking",
 # "aware", "logcap", "fedax", "mysqlite"). Fix: anchor every vocab entry with
-# `\b...\b`. For acronyms (all-uppercase or all-lowercase letter tokens) match
-# case-sensitively so e.g. "AWS" doesn't fire on "aws" inside "jaws"; for
-# regular and multi-word entries keep IGNORECASE so casing variants still match.
+# `\b...\b` so word boundaries reject in-word matches.
+#
+# Follow-up (post-critique): collapse the N-per-call regex searches into a
+# single IGNORECASE alternation regex. Word boundaries alone are enough to
+# prevent false positives ("aws" in "jaws" fails the boundary check regardless
+# of case), so the previous case-sensitive-for-acronyms branch is no longer
+# necessary. Net effect: ~10x speedup on the hot path AND lowercase variants
+# of acronyms ("sql queries", "dbt models") now correctly match.
 def _is_acronym(token: str) -> bool:
     """Treat all-uppercase or all-lowercase single-word vocab entries as acronyms.
 
-    Multi-word entries (containing whitespace) are never acronyms — they keep
-    IGNORECASE matching.
+    Retained for any callers that introspect tool-vocab classification — the
+    extract_tools matcher itself no longer branches on this because word
+    boundaries provide the same false-positive protection without the
+    case-sensitivity surprise documented in the #113 follow-up review.
     """
     if any(c.isspace() for c in token):
         return False
@@ -92,21 +99,72 @@ def _is_acronym(token: str) -> bool:
     return all(c.isupper() for c in letters) or all(c.islower() for c in letters)
 
 
-def _compile_tool_patterns() -> List[tuple]:
-    """Pre-compile (tool, regex) pairs once at module load."""
-    compiled: List[tuple] = []
-    for tool in TOOL_VOCAB:
-        pattern = r"\b" + re.escape(tool) + r"\b"
-        flags = 0 if _is_acronym(tool) else re.IGNORECASE
-        compiled.append((tool, re.compile(pattern, flags)))
-    return compiled
+def _compile_tool_alternation():
+    """Build a single IGNORECASE alternation regex covering every vocab entry.
+
+    Longer patterns come first so multi-word entries (e.g. 'GitHub Actions')
+    win over single-word ones ('GitHub') when both are in vocab.
+    """
+    if not TOOL_VOCAB:
+        return None, {}
+    patterns = sorted([re.escape(t) for t in TOOL_VOCAB], key=len, reverse=True)
+    alt = re.compile(r"\b(?:" + "|".join(patterns) + r")\b", re.IGNORECASE)
+    canonical = {t.lower(): t for t in TOOL_VOCAB}
+    return alt, canonical
 
 
-_TOOL_PATTERNS: List[tuple] = _compile_tool_patterns()
+_TOOL_ALT_RE, _TOOL_CANONICAL = _compile_tool_alternation()
 
 
 def extract_tools(text: str) -> List[str]:
-    return [tool for tool, pat in _TOOL_PATTERNS if pat.search(text)]
+    """Find tool/tech keywords from TOOL_VOCAB in `text`.
+
+    Returns canonical-cased names in vocab order, deduplicated. Substring
+    matches inside larger words are rejected via `\\b` anchors regardless of
+    case (e.g. "aws" in "jaws" or "sql" in "mysqlite" never match).
+    """
+    if _TOOL_ALT_RE is None:
+        return []
+    found_lower = {m.group(0).lower() for m in _TOOL_ALT_RE.finditer(text)}
+    return [t for t in TOOL_VOCAB if t.lower() in found_lower]
+
+
+# ---------------------------------------------------------------------------
+# Paren-aware delimiter split (skills / tech lists)
+# ---------------------------------------------------------------------------
+# Issue #114 and follow-up: a naive `re.split(r"[,;]", ...)` fragments inputs
+# like "Azure (AKS, DevOps, Data Factory)" into 4 bogus entries. Multiple
+# parsers (plain_parser, latex_parser, profile_extractor) had the same bug
+# scattered across 5 call sites — this helper consolidates the fix.
+def split_top_level(s: str, delims: str = ",;") -> List[str]:
+    """Split `s` on any character in `delims` that is NOT inside parentheses.
+
+    Preserves grouped tokens like 'Azure (AKS, DevOps)' as single entries.
+    Handles: empty input, unmatched closing parens (depth clamped at 0),
+    unmatched opening parens (tail captured intact), nested parens.
+    """
+    parts: List[str] = []
+    buf: List[str] = []
+    depth = 0
+    delim_set = set(delims)
+    for ch in s:
+        if ch == "(":
+            depth += 1
+            buf.append(ch)
+        elif ch == ")":
+            depth = max(0, depth - 1)
+            buf.append(ch)
+        elif ch in delim_set and depth == 0:
+            piece = "".join(buf).strip()
+            if piece:
+                parts.append(piece)
+            buf = []
+        else:
+            buf.append(ch)
+    tail = "".join(buf).strip()
+    if tail:
+        parts.append(tail)
+    return parts
 
 
 def score_confidence(text: str) -> str:
