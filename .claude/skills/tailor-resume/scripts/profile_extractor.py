@@ -18,7 +18,7 @@ import re
 from typing import List, Optional, Tuple
 
 from resume_types import Bullet, Profile, Project, Role, profile_to_dict
-from text_utils import extract_metrics, extract_tools, score_confidence
+from text_utils import extract_metrics, extract_tools, score_confidence, split_top_level
 
 
 # ---------------------------------------------------------------------------
@@ -137,7 +137,7 @@ def parse_latex(text: str, source: str = "latex_resume") -> Profile:
         name = parts[0].strip()
         tech_str = parts[1].strip() if len(parts) > 1 else ""
         date = _clean_latex(args[1]) if len(args) > 1 else ""
-        tech = [t.strip() for t in re.split(r"[,;]", tech_str) if t.strip()]
+        tech = split_top_level(tech_str)
         current_proj = Project(name=name, tech=tech, date=date)
         profile.projects.append(current_proj)
 
@@ -166,7 +166,7 @@ def parse_latex(text: str, source: str = "latex_resume") -> Profile:
         # Extract \textbf{Category}: skill1, skill2 — and also plain comma lists
         for m in re.finditer(r"\\textbf\{([^}]+)\}\{?:?\}?\s*([^\\\n]+)", skills_body):
             vals = m.group(2)
-            for sk in re.split(r"[,;]", vals):
+            for sk in split_top_level(vals):
                 sk = sk.strip(" \\{}$|")
                 if sk and len(sk) > 1:
                     profile.skills.append(sk)
@@ -1723,8 +1723,9 @@ def _parse_plain_resume_text_legacy(text: str, source: str = "resume") -> Profil
                     profile.education.append({"institution": s, "degree": "", "dates": "", "location": ""})
 
         elif section == "skills":
-            # Split on commas and semicolons; pipes separate categories, keep both sides
-            for sk in re.split(r"[,;]", s):
+            # Split on commas and semicolons; pipes separate categories, keep both sides.
+            # Paren-aware (issue #114 follow-up) so "Azure (AKS, DevOps)" stays intact.
+            for sk in split_top_level(s):
                 sk = sk.strip(" -*•·|")
                 # Strip leading category label "Languages: Python SQL" → add each word
                 colon_m = re.match(r"^[A-Za-z /&]+:\s*(.+)$", sk)
