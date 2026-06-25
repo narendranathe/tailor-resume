@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import pytest
 
-from parsers.plain_parser import _DATE_PATTERN, _parse_plain_resume_text
+from parsers.plain_parser import _DATE_PATTERN, _SECTION_HEADERS, _detect_section, _parse_plain_resume_text
 
 
 # ---------------------------------------------------------------------------
@@ -112,6 +112,55 @@ class TestDatePatternFirstMatch:
         m = _DATE_PATTERN.search("Data Engineer Aug. 2023 – July 2024")
         assert m is not None
         assert "Aug" in m.group(0) and "July 2024" in m.group(0)
+
+    # Fix 5 — "to" separator (LinkedIn / DOCX exports)
+    def test_range_with_to_separator(self):
+        m = _DATE_PATTERN.search("Jan 2021 to Dec 2022")
+        assert m is not None, "'Jan 2021 to Dec 2022' should match"
+        assert "Jan 2021" in m.group(0) and "Dec 2022" in m.group(0)
+
+    def test_range_with_thru_separator(self):
+        m = _DATE_PATTERN.search("Jan 2021 thru Dec 2022")
+        assert m is not None, "'Jan 2021 thru Dec 2022' should match"
+
+    def test_year_range_with_to(self):
+        m = _DATE_PATTERN.search("2019 to 2022")
+        assert m is not None, "'2019 to 2022' should match"
+
+
+# ---------------------------------------------------------------------------
+# Fix 6 — Section header alias coverage
+# ---------------------------------------------------------------------------
+
+class TestSectionHeaders:
+    """Regression for Fix 6: extended aliases map to canonical section names."""
+
+    def test_employment_history(self):
+        assert _detect_section("Employment History") == "experience"
+
+    def test_work_experience(self):
+        assert _detect_section("Work Experience") == "experience"
+
+    def test_professional_experience(self):
+        assert _detect_section("Professional Experience") == "experience"
+
+    def test_technical_projects(self):
+        assert _detect_section("Technical Projects") == "projects"
+
+    def test_side_projects(self):
+        assert _detect_section("Side Projects") == "projects"
+
+    def test_open_source(self):
+        assert _detect_section("Open Source") == "projects"
+
+    def test_achievements(self):
+        assert _detect_section("Achievements") == "certifications"
+
+    def test_honors(self):
+        assert _detect_section("Honors") == "certifications"
+
+    def test_awards(self):
+        assert _detect_section("Awards") == "certifications"
 
 
 # ---------------------------------------------------------------------------

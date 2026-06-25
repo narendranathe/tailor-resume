@@ -30,26 +30,40 @@ from parsers.normalizer import _dedupe, _parse_dates
 # full range "Aug. 2023 – July 2024" matches as one group (regression for #102:
 # previously the regex matched only "July 2024" and the leftover " – July 2024"
 # leaked into the company line / following title).
+# Fix 5: separator alternation includes "to", "thru", "through" in addition to
+# dash variants, so "Jan 2021 to Dec 2022" (LinkedIn / DOCX exports) matches.
+_SEP = r"(?:\s*(?:[–\-]|to|thru|through)\s*)"
 _DATE_PATTERN = re.compile(
     r"(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|"
     r"Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|"
     r"Dec(?:ember)?)\.?[\s,]*\d{2,4}"
-    r"(?:\s*[–\-]\s*(?:\d{2,4}|[Pp]resent|[Cc]urrent|[Nn]ow|"
+    r"(?:" + _SEP + r"(?:\d{2,4}|[Pp]resent|[Cc]urrent|[Nn]ow|"
     r"(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|"
     r"Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|"
     r"Dec(?:ember)?)\.?[\s,]*\d{2,4}))?|"
     r"Q[1-4][\s,]*\d{2,4}"
-    r"(?:\s*[–\-]\s*(?:\d{2,4}|[Pp]resent|[Cc]urrent|[Nn]ow))?|"
-    r"\d{4}\s*[-–]\s*(?:\d{4}|[Pp]resent|[Cc]urrent|[Nn]ow)",
+    r"(?:" + _SEP + r"(?:\d{2,4}|[Pp]resent|[Cc]urrent|[Nn]ow))?|"
+    r"\d{4}\s*(?:[–\-]|to|thru|through)\s*(?:\d{4}|[Pp]resent|[Cc]urrent|[Nn]ow)",
     re.IGNORECASE,
 )
 
+# Fix 6: extended aliases cover common ATS section header variants seen in
+# LinkedIn exports, Word templates, and non-Jake LaTeX styles.
 _SECTION_HEADERS = {
-    "experience": ["experience", "work experience", "employment", "work history", "professional experience"],
+    "experience": [
+        "experience", "work experience", "employment", "work history",
+        "professional experience", "employment history",
+    ],
     "education": ["education", "academic", "qualifications"],
     "skills": ["skills", "technical skills", "technologies", "core competencies"],
-    "projects": ["projects", "personal projects", "key projects", "technical projects"],
-    "certifications": ["certifications", "publications", "licenses", "recognition", "awards"],
+    "projects": [
+        "projects", "personal projects", "key projects", "technical projects",
+        "side projects", "open source",
+    ],
+    "certifications": [
+        "certifications", "publications", "licenses", "recognition", "awards",
+        "achievements", "honors",
+    ],
 }
 
 

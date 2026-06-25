@@ -377,8 +377,9 @@ class TestExtractPdfTextPdfminerMocked:
         # over-assert ordering because the implementation only emits a
         # column split when the gap is detected on x0_vals before page_mid.
 
-    def test_multi_sentence_text_box_split_into_bullets(self, monkeypatch):
-        # A single LTTextBox containing two sentences → bullets prefixed.
+    def test_multi_sentence_text_box_no_spurious_bullets(self, monkeypatch):
+        # Fix 3: _box_lines must NOT inject "• " into multi-sentence boxes.
+        # Raw lines are returned as-is; the plain parser decides what is a bullet.
         page = _FakeLayoutPage(
             width=612,
             elements=[
@@ -394,8 +395,11 @@ class TestExtractPdfTextPdfminerMocked:
         )
         _install_fake_pdfminer(monkeypatch, page)
         out = pdfx._extract_pdf_text_pdfminer(b"%PDF-fake")
-        # Multi-sentence → each becomes a bullet line "• ..."
-        assert out.count("•") >= 2
+        # Both lines must be present in the output…
+        assert "Built scalable ETL pipelines." in out
+        assert "Reduced query latency by 40%." in out
+        # …but no "• " was injected by _box_lines.
+        assert out.count("•") == 0, f"spurious bullets injected: {out!r}"
 
     def test_first_page_width_lookup_failure_uses_default(self, monkeypatch):
         # extract_pages succeeds first call, second call raises → page_mid=306 default.

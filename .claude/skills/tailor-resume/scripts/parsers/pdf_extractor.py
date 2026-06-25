@@ -519,7 +519,9 @@ def _extract_pdf_text_pdfminer(data: bytes) -> str:
     from pdfminer.layout import LAParams, LTTextBox
     import io
 
-    laparams = LAParams(char_margin=1.5, line_margin=0.3, word_margin=0.05, boxes_flow=0.5)
+    # Fix 4: boxes_flow=None prevents column bleed; line_margin=0.5 stops
+    # cross-section merging (e.g. company name + date pool in one box).
+    laparams = LAParams(char_margin=1.5, line_margin=0.5, word_margin=0.1, boxes_flow=None)
     boxes: List[Tuple[float, float, str]] = []
     for page_layout in extract_pages(io.BytesIO(data), laparams=laparams):
         for element in page_layout:
@@ -531,29 +533,22 @@ def _extract_pdf_text_pdfminer(data: bytes) -> str:
     if not boxes:
         return ""
 
-    try:
-        first_page = next(extract_pages(io.BytesIO(data), laparams=laparams))
-        page_mid = first_page.width / 2.0
-    except Exception:
-        page_mid = 306.0
-
     x0_vals = sorted(set(round(b[1]) for b in boxes))
     split_x: Optional[float] = None
     if len(x0_vals) >= 2:
+        # Fix 1: scan ALL adjacent x0 pairs — no early break — so the 272pt
+        # gap between left and right columns is always measured.  Raise
+        # threshold from 15pt to 50pt to filter margin jitter.
         max_gap, best_i = 0, 0
         for i in range(len(x0_vals) - 1):
-            if x0_vals[i + 1] > page_mid:
-                break
             gap = x0_vals[i + 1] - x0_vals[i]
             if gap > max_gap:
                 max_gap, best_i = gap, i
-        if max_gap > 15:
+        if max_gap > 50:
             split_x = (x0_vals[best_i] + x0_vals[best_i + 1]) / 2.0
 
+    # Fix 3: return raw lines only — never inject "• " programmatically.
     def _box_lines(text: str) -> List[str]:
-        sentences = _split_bullet_block(text)
-        if len(sentences) > 1:
-            return ["• " + s for s in sentences]
         return [ln.strip() for ln in text.split("\n") if ln.strip()]
 
     parts: List[str] = []
@@ -562,10 +557,11 @@ def _extract_pdf_text_pdfminer(data: bytes) -> str:
         right = [(y1, x0, t) for y1, x0, t in boxes if x0 >= split_x]
         left.sort(key=lambda b: (-b[0], b[1]))
         right.sort(key=lambda b: (-b[0], b[1]))
-        for _, _, text in right:
+        # Fix 2: emit left (content) before right (dates) — not backwards.
+        for _, _, text in left:
             parts.extend(_box_lines(text))
         parts.append("")
-        for _, _, text in left:
+        for _, _, text in right:
             parts.extend(_box_lines(text))
     else:
         boxes.sort(key=lambda b: (-b[0], b[1]))

@@ -456,3 +456,51 @@ Already captured in Wave 3 decisions. UI exposes it as an opt-in checkbox with "
 
 **Decision: Cover Letter "Copy plain text" button uses `navigator.clipboard.writeText()`.**
 Why: The most common use case is copy-paste into a job portal text box. A dedicated copy button eliminates the need to select-all in the text area. Shows "Copied!" for 1.5s then resets — standard UX pattern.
+
+---
+
+## 2026-06-25 — PDF Parsing Accuracy: regex-first fixes (prd_pdf_parsing.md)
+
+PRD spec at `specs/prd_pdf_parsing.md`. Six surgical fixes to `pdf_extractor.py` and `plain_parser.py` — zero new dependencies, < 30 lines changed.
+
+### Fix 1 — Column gap finder: remove `break`, raise threshold to 50pt
+
+**Decision: Scan all adjacent x0 pairs without breaking on `page_mid`; raise minimum gap threshold from 15pt to 50pt.**
+Why: The old `if x0_vals[i + 1] > page_mid: break` exited before measuring the 272pt gap between left and right columns on Jake-template PDFs. 15pt threshold passed 18pt margin jitter as a false split. 50pt eliminates false positives while reliably detecting the real two-column gap.
+Old code: `pdf_extractor.py:544–549`. File: `parsers/pdf_extractor.py`.
+
+### Fix 2 — Column reconstruction order: left before right
+
+**Decision: Emit left column (content) before right column (dates) in the column-split branch.**
+Why: The old code emitted `right` then `left` — dates appeared before role titles, causing the plain parser to treat dates as role titles. Correct order is content → dates, mirroring how a human reads the page.
+Old code: `pdf_extractor.py:565–569`. File: `parsers/pdf_extractor.py`.
+
+### Fix 3 — `_box_lines`: no spurious bullet injection
+
+**Decision: `_box_lines` returns raw `text.split("\\n")` lines only — never prefixes "• ".**
+Why: The old `_split_bullet_block` call split on sentence boundaries and injected "• " before each sentence, turning education prose ("Master of Science…\nGPA: 4.0") into fake bullets. Bullet detection is the plain parser's job, not the extractor's.
+Old code: `pdf_extractor.py:553–557`. File: `parsers/pdf_extractor.py`.
+
+### Fix 4 — LAParams: `boxes_flow=None`, `line_margin=0.5`
+
+**Decision: `LAParams(char_margin=1.5, line_margin=0.5, word_margin=0.1, boxes_flow=None)` as the permanent default.**
+Why: `boxes_flow=0.5` caused pdfminer to mix horizontal and vertical proximity when grouping characters — columns bled into each other. `line_margin=0.3` merged adjacent lines from different sections (company name + date pool) into one box. `boxes_flow=None` disables flow analysis and treats boxes as pure coordinate-separated regions. `line_margin=0.5` gives enough vertical gap for pdfminer to separate logically distinct groups.
+File: `parsers/pdf_extractor.py`.
+
+### Fix 5 — `_DATE_PATTERN`: add `to | thru | through` separator
+
+**Decision: Separator alternation in `_DATE_PATTERN` extended to `(?:[–\-]|to|thru|through)`.**
+Why: LinkedIn and DOCX exports commonly format date ranges as "Jan 2021 to Dec 2022". The old pattern only matched dash variants, causing these ranges to be missed and the text "to Dec 2022" to leak into the role title or company field.
+File: `parsers/plain_parser.py`.
+
+### Fix 6 — `_SECTION_HEADERS`: extended aliases
+
+**Decision: Three sections gain additional aliases — experience gets "employment history"; projects gets "side projects", "open source"; certifications gets "achievements", "honors".**
+Why: ATS section headers vary widely by resume source. "Employment History" is the most common Word template variant; "Side Projects" and "Open Source" appear in GitHub-first resumes; "Achievements" and "Honors" are used in academic CVs that candidates convert to industry resumes.
+File: `parsers/plain_parser.py`.
+
+### Test updates
+
+- `test_pdf_extractor_deep.py::test_multi_sentence_text_box_split_into_bullets` renamed and flipped to `test_multi_sentence_text_box_no_spurious_bullets` — now asserts correct behavior (no "• " injected).
+- `test_plain_parser_jake_template.py` — added `TestSectionHeaders` class (9 tests for Fix 6) and 3 new `TestDatePatternFirstMatch` tests for Fix 5.
+- Total passing after merge: 921 (up from 920). 0 failures.
