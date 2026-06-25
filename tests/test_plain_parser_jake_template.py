@@ -240,3 +240,17 @@ class TestFixtureBDisorderedText:
             assert not p.name.startswith("Implemented "), (
                 f"bullet text used as project name: {p.name!r}"
             )
+
+    def test_fraud_pipeline_has_two_bullets(self, profile):
+        """Regression for #115: orphaned bullet appearing before the project
+        header in column-ordered pdfminer output must be attached to the
+        correct project, not dropped."""
+        fraud = next(
+            (p for p in profile.projects if p.name == "Real-Time Fraud Detection Pipeline"),
+            None,
+        )
+        assert fraud is not None, "fraud pipeline project not found"
+        assert len(fraud.bullets) >= 2, (
+            f"expected ≥2 bullets for fraud pipeline project (bug #115), "
+            f"got {len(fraud.bullets)}: {[b.text[:60] for b in fraud.bullets]}"
+        )

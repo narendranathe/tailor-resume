@@ -187,6 +187,11 @@ def _parse_plain_resume_text(text: str, source: str = "resume") -> Profile:
     current_role: Optional[Role] = None
     # Pool of date ranges seen before any role header (pdfminer column order).
     orphan_dates: list[tuple[str, str]] = []
+    # Pool of bullets that arrive before any project header (pdfminer column
+    # order puts right-column dates/years at the same y-level as a bullet that
+    # visually belongs to the next project header).  Attached to the next
+    # project that is parsed.  Fix for #115.
+    orphan_project_bullets: list[Bullet] = []
 
     i = 0
     while i < n:
@@ -381,6 +386,10 @@ def _parse_plain_resume_text(text: str, source: str = "resume") -> Profile:
             if header is not None:
                 name, tech, year = header
                 proj = Project(name=name, tech=tech, date=year)
+                # Attach bullets that arrived before this header in
+                # column-ordered pdfminer output (fix for #115).
+                proj.bullets.extend(orphan_project_bullets)
+                orphan_project_bullets.clear()
                 profile.projects.append(proj)
                 continue
 
@@ -397,14 +406,21 @@ def _parse_plain_resume_text(text: str, source: str = "resume") -> Profile:
                 )
                 if looks_like_name:
                     proj = Project(name=txt, tech=extract_tools(txt))
+                    proj.bullets.extend(orphan_project_bullets)
+                    orphan_project_bullets.clear()
                     profile.projects.append(proj)
-                elif txt and len(txt) > 10 and profile.projects:
+                elif txt and len(txt) > 10:
                     bul = Bullet(
                         text=txt, metrics=extract_metrics(txt),
                         tools=extract_tools(txt), evidence_source=source,
                         confidence=score_confidence(txt),
                     )
-                    profile.projects[-1].bullets.append(bul)
+                    if profile.projects:
+                        profile.projects[-1].bullets.append(bul)
+                    else:
+                        # Bullet arrived before any project header — stash it
+                        # for the next project (pdfminer column-order, #115).
+                        orphan_project_bullets.append(bul)
                 continue
 
             # Non-bullet, non-pipe line in projects section.  Bare year
