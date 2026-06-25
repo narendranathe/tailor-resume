@@ -21,7 +21,13 @@ from __future__ import annotations
 
 import pytest
 
-from parsers.plain_parser import _DATE_PATTERN, _SECTION_HEADERS, _detect_section, _parse_plain_resume_text
+from parsers.plain_parser import (
+    _DATE_PATTERN,
+    _SECTION_HEADERS,
+    _detect_section,
+    _parse_education_oneliner,
+    _parse_plain_resume_text,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -303,3 +309,73 @@ class TestFixtureBDisorderedText:
             f"expected ≥2 bullets for fraud pipeline project (bug #115), "
             f"got {len(fraud.bullets)}: {[b.text[:60] for b in fraud.bullets]}"
         )
+
+
+# ---------------------------------------------------------------------------
+# Education single-line parser (Issue #129)
+# ---------------------------------------------------------------------------
+
+class TestParseEducationOneliner:
+    """Unit tests for _parse_education_oneliner (Issue #129).
+
+    Validates that condensed one-liner education lines — common in LinkedIn
+    exports and DOCX templates — are parsed into full institution/degree/dates
+    dicts rather than silently losing GPA or date fields.
+    """
+
+    def test_pipe_dash_gpa_dates(self):
+        line = "Missouri S&T — M.S. Information Science | GPA: 4.0 | Jan 2022 – Dec 2023"
+        result = _parse_education_oneliner(line)
+        assert result is not None, "one-liner should match"
+        assert "Missouri S&T" in result["institution"]
+        assert "M.S. Information Science" in result["degree"]
+        assert "GPA: 4.0" in result["degree"]
+        assert "Jan 2022" in result["dates"] or "Dec 2023" in result["dates"]
+
+    def test_pipe_separator_no_gpa(self):
+        line = "University of Texas | B.S. Computer Science | 2018 – 2022"
+        result = _parse_education_oneliner(line)
+        assert result is not None
+        assert "University of Texas" in result["institution"]
+        assert "B.S. Computer Science" in result["degree"]
+        assert "2018" in result["dates"] or "2022" in result["dates"]
+
+    def test_no_dates_returns_empty_dates(self):
+        line = "MIT — Ph.D. Machine Learning"
+        result = _parse_education_oneliner(line)
+        assert result is not None
+        assert "MIT" in result["institution"]
+        assert "Ph.D. Machine Learning" in result["degree"]
+        assert result["dates"] == ""
+
+    def test_bare_date_line_returns_none(self):
+        """A bare date range must NOT match — it should fall through to existing parser."""
+        line = "Jan 2022 – Dec 2023"
+        result = _parse_education_oneliner(line)
+        assert result is None
+
+    def test_doublespace_separated(self):
+        line = "University of Michigan  B.S. Computer Science  2015 – 2019"
+        result = _parse_education_oneliner(line)
+        assert result is not None
+        assert "University of Michigan" in result["institution"]
+        assert "B.S." in result["degree"]
+
+    def test_existing_multiline_education_unchanged(self):
+        """Jake-template multi-line education must still parse correctly (regression)."""
+        text = """\
+Education
+Missouri University of Science and Technology Rolla, MO
+Master of Science in Information Science and Technology; GPA: 4.0/4.0 Jan. 2022 – Dec. 2023
+"""
+        profile = _parse_plain_resume_text(text)
+        assert profile.education, "education list must not be empty"
+        edu = profile.education[0]
+        assert "Missouri University" in edu["institution"] or "Missouri University" in edu.get("institution", "")
+
+    def test_location_field_empty(self):
+        """Parsed one-liners never invent a location — that field stays empty."""
+        line = "Stanford University — M.S. Computer Science | 2020 – 2022"
+        result = _parse_education_oneliner(line)
+        assert result is not None
+        assert result["location"] == ""

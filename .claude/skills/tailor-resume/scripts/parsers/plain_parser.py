@@ -109,6 +109,78 @@ _EMAIL_RE = re.compile(r"[\w.+-]+@[\w.-]+\.\w{2,}")
 _PHONE_RE = re.compile(r"[\+\(]?[\d\s\-\(\)]{7,15}\d")
 _URL_RE   = re.compile(r"https?://\S+|linkedin\.com/\S+|github\.com/\S+", re.IGNORECASE)
 
+# Detects GPA within a text fragment.
+_GPA_RE = re.compile(r"GPA[:\s]+(?P<gpa>[\d.]+)", re.IGNORECASE)
+# Matches a line that starts with a month name — these are bare date ranges,
+# not institution names, so the one-liner should not match them.
+_STARTS_WITH_MONTH_RE = re.compile(
+    r"^(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|"
+    r"Jul(?:y)?|Aug(?:ust)?|Sep(?:t)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\b",
+    re.IGNORECASE,
+)
+
+
+def _parse_education_oneliner(line: str):
+    """Try to parse a condensed single-line education entry.
+
+    Handles formats like:
+      "Institution — Degree | GPA: X.X | Jan YYYY – Dec YYYY"   (pipe/em-dash)
+      "Institution | Degree | Dates"                              (all-pipe)
+      "Institution  Degree  Dates"                               (double-space)
+
+    Returns a dict with institution/degree/dates/location on match,
+    or None to signal fallthrough to the existing multi-line heuristic.
+    """
+    s = line.strip()
+    if not s or not s[0].isupper():
+        return None
+    # Bare date lines (e.g. "Jan 2022 – Dec 2023") must fall through.
+    if _STARTS_WITH_MONTH_RE.match(s) or s[0].isdigit():
+        return None
+
+    # --- Strategy 1: pipe (|) or em-dash (—) field separator ---
+    # En-dash (–) is NOT used as a field separator here: it appears inside date
+    # ranges and would split "Jan 2022 – Dec 2023" incorrectly.
+    if re.search(r"[|—]", s):
+        raw_parts = re.split(r"\s*[|—]\s*", s)
+    else:
+        # --- Strategy 2: double-space separator ---
+        raw_parts = re.split(r"\s{2,}", s)
+
+    if len(raw_parts) < 2:
+        return None
+
+    inst = raw_parts[0].strip().rstrip("–—-,")
+    if not inst or not inst[0].isupper() or _STARTS_WITH_MONTH_RE.match(inst):
+        return None
+
+    # Rejoin remaining parts for scanning
+    rest = " | ".join(raw_parts[1:])
+
+    # Extract GPA
+    gpa: str = ""
+    gm = _GPA_RE.search(rest)
+    if gm:
+        gpa = gm.group("gpa")
+        rest = rest[: gm.start()].rstrip(" |–—") + rest[gm.end() :]
+
+    # Extract date range (take from the first match to end of string)
+    dates: str = ""
+    dm = _DATE_PATTERN.search(rest)
+    if dm:
+        dates = rest[dm.start() :].strip()
+        rest = rest[: dm.start()].strip(" |–—")
+
+    deg = rest.strip(" |–—").strip()
+    if not deg:
+        return None
+
+    if gpa:
+        deg = f"{deg} (GPA: {gpa})"
+
+    return {"institution": inst, "degree": deg, "dates": dates, "location": ""}
+
+
 # "City, ST" or "City, Country" trailing location.  Matches the Jake template
 # 2-line role header ("Company Name Dallas, TX") where there's no double-space
 # separator between company and location.
@@ -408,18 +480,32 @@ def _parse_plain_resume_text(text: str, source: str = "resume") -> Profile:
 
         elif section == "education":
             if not s.startswith(("•", "-")):
-                date_m = _DATE_PATTERN.search(s)
-                is_degree = any(kw in s.lower() for kw in ("master", "bachelor", "phd", "b.s", "m.s", "b.e", "m.e", "mba", "doctor", "associate"))
-                is_inst = any(kw in s.lower() for kw in ("university", "college", "institute", "school", "tech", "polytechnic"))
-                if date_m and not is_inst and profile.education:
-                    profile.education[-1]["dates"] = s
-                elif is_degree and profile.education:
-                    if not profile.education[-1]["degree"]:
-                        profile.education[-1]["degree"] = s
+                # Enhancement #9 (Issue #129): try single-line parser first.
+                # Handles "Institution — Degree | GPA | Dates" condensed format
+                # common in LinkedIn exports and Word templates.
+                oneliner = _parse_education_oneliner(s)
+                if oneliner:
+                    # Merge dates into last entry if it was just an institution stub
+                    if (profile.education
+                            and not profile.education[-1]["degree"]
+                            and not profile.education[-1]["dates"]
+                            and profile.education[-1]["institution"] == oneliner["institution"]):
+                        profile.education[-1].update(oneliner)
                     else:
+                        profile.education.append(oneliner)
+                else:
+                    date_m = _DATE_PATTERN.search(s)
+                    is_degree = any(kw in s.lower() for kw in ("master", "bachelor", "phd", "b.s", "m.s", "b.e", "m.e", "mba", "doctor", "associate"))
+                    is_inst = any(kw in s.lower() for kw in ("university", "college", "institute", "school", "tech", "polytechnic"))
+                    if date_m and not is_inst and profile.education:
+                        profile.education[-1]["dates"] = s
+                    elif is_degree and profile.education:
+                        if not profile.education[-1]["degree"]:
+                            profile.education[-1]["degree"] = s
+                        else:
+                            profile.education.append({"institution": s, "degree": "", "dates": "", "location": ""})
+                    elif is_inst or date_m:
                         profile.education.append({"institution": s, "degree": "", "dates": "", "location": ""})
-                elif is_inst or date_m:
-                    profile.education.append({"institution": s, "degree": "", "dates": "", "location": ""})
 
         elif section == "skills":
             # #114: split on commas/semicolons that are NOT inside parens so
