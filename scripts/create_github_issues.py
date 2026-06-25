@@ -228,36 +228,44 @@ Not yet implemented. Tracked for future sprint.
 
 def create_via_api(token: str) -> None:
     try:
-        from github import Github
+        from github import Auth, Github
     except ImportError:
         print("PyGithub not installed. Run: pip install PyGithub")
         sys.exit(1)
 
-    g = Github(token)
+    g = Github(auth=Auth.Token(token))
     repo = g.get_repo(REPO)
 
-    # Create labels if they don't exist
+    # Create labels if they don't exist (colors without # prefix)
     existing_labels = {lb.name for lb in repo.get_labels()}
     label_defs = {
-        "prd": ("#0075ca", "Product Requirements Document"),
-        "ats-score": ("#e4e669", "ATS scoring pipeline improvements"),
-        "parsing": ("#d93f0b", "PDF / plain-text parsing"),
-        "enhancement": ("#a2eeef", "New feature or request"),
-        "bug": ("#d73a4a", "Something is broken"),
-        "future": ("#cfd3d7", "Planned for a future sprint"),
+        "prd": ("0075ca", "Product Requirements Document"),
+        "ats-score": ("e4e669", "ATS scoring pipeline improvements"),
+        "parsing": ("d93f0b", "PDF / plain-text parsing"),
+        "enhancement": ("a2eeef", "New feature or request"),
+        "bug": ("d73a4a", "Something is broken"),
+        "future": ("cfd3d7", "Planned for a future sprint"),
     }
     for name, (color, desc) in label_defs.items():
         if name not in existing_labels:
             repo.create_label(name, color, desc)
             print(f"  Created label: {name}")
+        else:
+            print(f"  Label exists: {name}")
 
+    existing_titles = {i.title for i in repo.get_issues(state="open")}
     for issue in ISSUES:
+        if issue.title in existing_titles:
+            safe = issue.title.encode("ascii", "replace").decode()
+            print(f"  SKIP (exists): {safe}")
+            continue
         created = repo.create_issue(
             title=issue.title,
             body=issue.body,
             labels=issue.labels,
         )
-        print(f"  #{created.number}: {issue.title}")
+        safe_title = issue.title.encode("ascii", "replace").decode()
+        print(f"  #{created.number}: {safe_title}")
 
 
 def create_via_gh() -> None:
