@@ -493,7 +493,13 @@ def _extract_pdf_text_stdlib(data: bytes) -> str:
 # ---------------------------------------------------------------------------
 
 def _split_bullet_block(text: str) -> List[str]:
-    """Split a multi-sentence paragraph block into individual bullet strings."""
+    """Split a multi-sentence paragraph into bullet strings.
+
+    Enhancement #6: only splits when the block contains 3+ sentences to avoid
+    incorrectly fragmenting technical bullets that naturally contain two sentences
+    (e.g. 'Reduced latency 40%. Deployed via Kubernetes.'). Single-period endings
+    are common in bullet bodies and do NOT guarantee a new bullet begins.
+    """
     sentences: List[str] = []
     current: List[str] = []
     for raw in text.split("\n"):
@@ -503,14 +509,22 @@ def _split_bullet_block(text: str) -> List[str]:
                 sentences.append(" ".join(current))
                 current = []
             continue
-        if current and current[-1].rstrip().endswith(".") and line[0].isupper():
-            sentences.append(" ".join(current))
-            current = [line]
-        else:
-            current.append(line)
+        current.append(line)
     if current:
         sentences.append(" ".join(current))
-    return [s for s in sentences if s]
+    candidates = [s for s in sentences if s]
+    # Only split at sentence boundaries when there are 3+ sentences in the block
+    if len(candidates) == 1 and candidates[0].count(". ") >= 2:
+        sub: List[str] = []
+        parts = re.split(r"\.\s+(?=[A-Z])", candidates[0])
+        for p in parts:
+            p = p.strip()
+            if p and not p.endswith("."):
+                p += "."
+            if p:
+                sub.append(p)
+        return sub if len(sub) >= 3 else candidates
+    return candidates
 
 
 def _extract_pdf_text_pdfminer(data: bytes) -> str:
@@ -805,7 +819,11 @@ PROFILE:
 # Public API
 # ---------------------------------------------------------------------------
 
-def parse_pdf(file_bytes: bytes, source: str = "pdf_resume") -> Profile:
+def parse_pdf(
+    file_bytes: bytes,
+    source: str = "pdf_resume",
+    debug: bool = False,
+) -> "Profile | tuple[Profile, str]":
     """
     Extract text from a PDF file and parse it into a Profile.
 
@@ -813,11 +831,17 @@ def parse_pdf(file_bytes: bytes, source: str = "pdf_resume") -> Profile:
         1. pdfminer.six — reads ToUnicode CMap; best for LaTeX/CMR fonts
         2. pypdf         — fast; good for Word-generated PDFs
         3. stdlib        — no dependencies; last resort
+
+    Enhancement #10: pass debug=True to get (Profile, raw_text) so you can
+    inspect exactly what text the regex state machine received.
     """
     text = ""
+    tier_used = "none"
 
     try:
         text = _extract_pdf_text_pdfminer(file_bytes)
+        if text.strip():
+            tier_used = "pdfminer"
     except Exception:
         pass
 
@@ -828,11 +852,15 @@ def parse_pdf(file_bytes: bytes, source: str = "pdf_resume") -> Profile:
             reader = PdfReader(io.BytesIO(file_bytes))
             pages = [page.extract_text() or "" for page in reader.pages]
             text = "\n".join(pages)
+            if text.strip():
+                tier_used = "pypdf"
         except ImportError:
             pass
 
     if not text.strip():
         text = _extract_pdf_text_stdlib(file_bytes)
+        if text.strip():
+            tier_used = "stdlib"
 
     if not text.strip():
         raise ValueError(
@@ -844,6 +872,11 @@ def parse_pdf(file_bytes: bytes, source: str = "pdf_resume") -> Profile:
     text = _normalize_ot1_artifacts(text)
 
     if "\\resumeSubheading" in text or "\\resumeItem" in text:
-        return parse_latex(text, source=source)
+        profile = parse_latex(text, source=source)
+    else:
+        profile = _parse_plain_resume_text(text, source=source)
 
-    return _parse_plain_resume_text(text, source=source)
+    if debug:
+        debug_text = f"# tier: {tier_used}\n\n{text}"
+        return profile, debug_text
+    return profile

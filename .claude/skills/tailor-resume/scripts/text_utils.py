@@ -47,6 +47,14 @@ METRIC_PATTERNS = [
     rf"\b\d+(?:\.\d+)?\s?{_TIME_UNIT}\b",
     # Multipliers (e.g. 10x)
     r"\b\d+(?:\.\d+)?x\b",
+    # Fix 12: sub-ms / sub-second latency
+    r"\bsub[-\s]?(?:ms|millisecond|second|sec)\b",
+    # Fix 12: headcount signals (e.g. "12-person team", "200 engineers")
+    r"\b\d+[-\s]?(?:person|member|engineer|developer|employee|analyst)s?\b",
+    # Fix 12: NPS scores
+    r"\bNPS\s*(?:score\s*)?\d+",
+    # Fix 12: ranked / top-N signals
+    r"\b(?:top|ranked|rank)\s+\d+(?:\s*%|\s+of\s+\d+)?\b",
 ]
 
 # Defensive cap — see issue #112. Any single metric longer than this is a sign
@@ -188,12 +196,15 @@ STOPWORDS = {
     "must", "minimum", "years", "year", "related", "relevant", "various",
     "including", "such", "etc", "well", "also", "both", "other", "new",
     "all", "any", "its", "may", "what", "how", "who", "able", "help",
+    # 2-char non-technical stop words (kept after Fix 2 raised min len to >=2)
+    "in", "of", "be", "is", "it", "or", "at", "by", "an", "on", "do",
+    "as", "if", "to", "we", "he", "me", "so", "no", "up", "am",
 }
 
 
 def tokenize(text: str) -> List[str]:
     tokens = re.findall(r"[a-zA-Z][a-zA-Z0-9\-/+.#]*", text.lower())
-    return [t for t in tokens if t not in STOPWORDS and len(t) > 2]
+    return [t for t in tokens if t not in STOPWORDS and len(t) >= 2]  # Fix 2: >=2 catches ml, ai, go, tf
 
 
 def extract_phrases(text: str, n: int = 2) -> List[str]:

@@ -43,13 +43,21 @@ _DATE_PATTERN = re.compile(
     r"Dec(?:ember)?)\.?[\s,]*\d{2,4}))?|"
     r"Q[1-4][\s,]*\d{2,4}"
     r"(?:" + _SEP + r"(?:\d{2,4}|[Pp]resent|[Cc]urrent|[Nn]ow))?|"
-    r"\d{4}\s*(?:[–\-]|to|thru|through)\s*(?:\d{4}|[Pp]resent|[Cc]urrent|[Nn]ow)",
+    r"\d{4}\s*(?:[–\-]|to|thru|through)\s*(?:\d{4}|[Pp]resent|[Cc]urrent|[Nn]ow)|"
+    # Enhancement #2: MM/YYYY slash format (LinkedIn, Word exports)
+    r"\d{1,2}/\d{4}(?:" + _SEP + r"(?:\d{1,2}/\d{4}|[Pp]resent|[Cc]urrent|[Nn]ow))?|"
+    # Enhancement #2: ISO YYYY-MM format
+    r"\d{4}-\d{2}(?:" + _SEP + r"(?:\d{4}-\d{2}|[Pp]resent|[Cc]urrent|[Nn]ow))?",
     re.IGNORECASE,
 )
 
-# Fix 6: extended aliases cover common ATS section header variants seen in
+# Fix 6 + Enhancement #5: extended aliases cover common ATS section header variants seen in
 # LinkedIn exports, Word templates, and non-Jake LaTeX styles.
 _SECTION_HEADERS = {
+    "summary": [
+        "summary", "profile", "objective", "professional summary",
+        "summary of qualifications", "about me", "career objective",
+    ],
     "experience": [
         "experience", "work experience", "employment", "work history",
         "professional experience", "employment history",
@@ -95,6 +103,11 @@ def _like_title_line(ln: str) -> bool:
         and not ln.startswith(("•", "-", "–", "*", "·", "○", "▪"))
     )
 
+
+# Enhancement #4: contact-info regex for preamble scanning
+_EMAIL_RE = re.compile(r"[\w.+-]+@[\w.-]+\.\w{2,}")
+_PHONE_RE = re.compile(r"[\+\(]?[\d\s\-\(\)]{7,15}\d")
+_URL_RE   = re.compile(r"https?://\S+|linkedin\.com/\S+|github\.com/\S+", re.IGNORECASE)
 
 # "City, ST" or "City, Country" trailing location.  Matches the Jake template
 # 2-line role header ("Company Name Dallas, TX") where there's no double-space
@@ -221,20 +234,46 @@ def _parse_plain_resume_text(text: str, source: str = "resume") -> Profile:
             current_role = None
             continue
 
-        # In the preamble (before the first section header) we ignore
-        # everything \u2014 the candidate's name, contact line, summary blurb etc.
-        # Exception: pdfminer column-extracted text often pools the date
-        # ranges on the first page above the section headers; we stash any
-        # bare date-range line for positional pairing with the first roles
-        # we encounter in the experience section.
+        # In the preamble (before the first section header) we extract contact
+        # info and stash orphan date ranges for positional pairing with roles.
+        # Enhancement #4: scan name, email, phone, linkedin, github from preamble.
         if section is None or section == "preamble":
             dm = _DATE_PATTERN.search(s)
             if dm and dm.group(0).strip() == s.strip():
                 start_o, end_o = _parse_dates(dm.group(0))
                 orphan_dates.append((start_o, end_o))
+                continue
+            email_m = _EMAIL_RE.search(s)
+            if email_m and not profile.contact.get("email"):
+                profile.contact["email"] = email_m.group(0)
+            phone_m = _PHONE_RE.search(s)
+            if phone_m and not profile.contact.get("phone"):
+                profile.contact["phone"] = phone_m.group(0).strip()
+            for url in _URL_RE.findall(s):
+                if "linkedin" in url.lower() and not profile.contact.get("linkedin"):
+                    profile.contact["linkedin"] = url
+                elif "github" in url.lower() and not profile.contact.get("github"):
+                    profile.contact["github"] = url
+            # First short all-alpha line with no contact data \u2192 candidate name
+            if (not profile.contact.get("name") and not email_m and not phone_m
+                    and not _URL_RE.search(s) and not dm
+                    and len(s.split()) <= 5 and s and s[0].isupper()):
+                profile.contact["name"] = s
+            continue
+
+        # Enhancement #5: accumulate summary/profile/objective text
+        if section == "summary":
+            if profile.summary:
+                profile.summary += " " + s
+            else:
+                profile.summary = s
             continue
 
         if section == "experience":
+            # Enhancement #7: skip subheaders like "Responsibilities:", "Key Achievements:"
+            if current_role is not None and s.rstrip().endswith(":") and len(s.split()) <= 5:
+                continue
+
             next1 = lines[i] if i < n else ""
             next2 = lines[i + 1] if i + 1 < n else ""
             date_here = _DATE_PATTERN.search(s)
@@ -357,6 +396,15 @@ def _parse_plain_resume_text(text: str, source: str = "resume") -> Profile:
                     current_role.bullets.append(bullet)
                 # else: bullet with no role context — drop silently rather
                 # than mis-attribute (fix for #104).
+            elif (current_role is not None and current_role.bullets
+                  and not date_here and len(s) > 10
+                  and s and s[0].islower()):
+                # Enhancement #8: wrap-continuation — lowercase line with no date/section
+                # prefix is a wrapped tail of the previous bullet (common in PDF extracts).
+                last = current_role.bullets[-1]
+                last.text = (last.text + " " + s).strip()
+                last.metrics = extract_metrics(last.text)
+                last.tools = extract_tools(last.text)
 
         elif section == "education":
             if not s.startswith(("•", "-")):

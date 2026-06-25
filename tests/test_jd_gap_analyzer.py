@@ -54,9 +54,16 @@ class TestTokenize:
         assert "and" not in tokens
 
     def test_filters_short_words(self):
+        # "a" (1 char) filtered by length; "in", "be", "of" (2 char) now in STOPWORDS
+        # 2-char technical terms like "ml" and "ai" still pass through (Fix 2).
         tokens = tokenize("a in be of")
-        for t in tokens:
-            assert len(t) > 2
+        assert not tokens  # all filtered: 1-char by length, 2-char by stopwords
+
+    def test_two_char_technical_terms_pass_through(self):
+        tokens = tokenize("ml ai go ci cd")
+        assert "ml" in tokens
+        assert "ai" in tokens
+        assert "go" in tokens
 
     def test_empty_string(self):
         assert tokenize("") == []

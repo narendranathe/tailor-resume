@@ -244,6 +244,14 @@ def build_from_profile(
         "SKILLS_SECTION": render_skills(profile.get("skills", [])),
         "CERTIFICATIONS_SECTION": render_certifications(profile.get("certifications", [])),
         "SUMMARY": escape(profile.get("summary", "")),
+        # Fix 3+13: SUMMARY_SECTION renders a full \section{Summary} block when
+        # a summary is present; collapses to empty string when absent so no
+        # blank section appears in the final PDF.
+        "SUMMARY_SECTION": (
+            "\\section{Summary}\n" + escape(profile.get("summary", ""))
+            if profile.get("summary", "").strip()
+            else ""
+        ),
     }
 
     render_template(template_path, output_path, replacements)

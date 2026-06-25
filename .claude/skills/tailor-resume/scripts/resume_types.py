@@ -18,16 +18,43 @@ from typing import Dict, List, Optional, Tuple
 # Tool vocabulary — single source of truth across all scripts
 # ---------------------------------------------------------------------------
 TOOL_VOCAB: List[str] = [
-    "Python", "SQL", "Bash", "Java", "Scala",
-    "Spark", "Kafka", "Airflow", "Dagster", "dbt",
-    "Docker", "Kubernetes", "Terraform",
-    "Azure", "AWS", "GCP", "Databricks", "Delta Lake", "Iceberg",
-    "Microsoft Fabric", "Power BI", "DAX",
-    "FastAPI", "Flask", "React", "Streamlit",
-    "PostgreSQL", "MySQL", "Redis", "Elasticsearch",
-    "Pytest", "GitHub Actions", "Azure DevOps", "CI/CD",
-    "MLflow", "LangChain", "RAG", "Pinecone", "pgvector",
-    "Prometheus", "Grafana", "Monte Carlo", "Great Expectations",
+    # Languages (Fix 7)
+    "Python", "SQL", "Bash", "Java", "Scala", "TypeScript", "JavaScript",
+    "Go", "Rust", "C++", "Node.js",
+    # Stream & batch processing
+    "Spark", "PySpark", "Flink", "Kafka", "Kinesis", "Pub/Sub",
+    "Apache Beam", "Pulsar", "RabbitMQ",
+    # Orchestration
+    "Airflow", "Dagster", "Prefect", "Celery",
+    # Transformation & modeling
+    "dbt", "dbt Core", "dbt Cloud",
+    # Ingestion & ELT
+    "Fivetran", "Airbyte", "Stitch", "Glue",
+    # Infra & containers
+    "Docker", "Kubernetes", "Terraform", "Helm", "ArgoCD", "Ansible", "Pulumi",
+    # Cloud platforms
+    "Azure", "AWS", "GCP", "Databricks", "EMR", "Dataflow",
+    # Table formats & storage
+    "Delta Lake", "Iceberg", "Parquet", "HDFS", "Hive",
+    # Cloud warehouses & query engines
+    "Snowflake", "BigQuery", "Redshift", "Microsoft Fabric", "Trino", "Presto",
+    # BI & visualization
+    "Power BI", "DAX", "Looker", "Tableau", "Superset", "Metabase",
+    # Web frameworks & APIs
+    "FastAPI", "Flask", "React", "Streamlit", "gRPC", "GraphQL",
+    # Databases
+    "PostgreSQL", "MySQL", "Redis", "Elasticsearch", "Hadoop",
+    # Testing & CI/CD
+    "Pytest", "GitHub Actions", "Azure DevOps", "CI/CD", "Jenkins", "CircleCI",
+    # ML & AI
+    "MLflow", "LangChain", "LangGraph", "RAG", "Pinecone", "pgvector",
+    "Pandas", "NumPy", "scikit-learn", "PyTorch", "TensorFlow",
+    "HuggingFace", "LlamaIndex", "Milvus", "Weaviate", "ChromaDB", "OpenAI",
+    # Observability & quality
+    "Prometheus", "Grafana", "Monte Carlo", "Great Expectations", "Soda",
+    "OpenTelemetry", "Jaeger", "Datadog", "Splunk",
+    # Collaboration
+    "JIRA", "Confluence", "Notion",
 ]
 
 
@@ -68,6 +95,8 @@ class Profile:
     skills: List[str] = field(default_factory=list)
     education: List[Dict] = field(default_factory=list)
     certifications: List[str] = field(default_factory=list)
+    summary: str = ""  # Enhancement #5: captured from Summary/Profile/Objective section
+    contact: Dict = field(default_factory=dict)  # Enhancement #4: {name, email, phone, linkedin, github}
 
 
 def profile_to_dict(profile: Profile) -> dict:

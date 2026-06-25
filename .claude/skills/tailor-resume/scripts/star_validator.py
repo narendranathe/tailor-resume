@@ -37,6 +37,13 @@ ACTION_VERBS: set = {
     "redesigned", "reduced", "refactored", "replaced", "restructured",
     "scaled", "shipped", "standardized", "streamlined", "transformed",
     "unified", "upgraded",
+    # Senior-IC / leadership verbs (Fix 5)
+    "advocated", "authored", "championed", "coached", "collaborated",
+    "coordinated", "cultivated", "diagnosed", "facilitated", "influenced",
+    "instrumented", "mentored", "negotiated", "onboarded", "partnered",
+    "prioritized", "proposed", "prototyped", "provisioned", "refined",
+    "resolved", "reviewed", "secured", "spearheaded", "triaged",
+    "validated",
 }
 
 # Outcome/result signal words (complement to numeric patterns)
@@ -60,11 +67,8 @@ _METRIC_PATTERNS: List[str] = [
 
 
 def _has_action(text: str) -> bool:
-    """Check whether the bullet contains a strong action verb."""
-    first_words = text.lower().split()[:6]  # check opening words
-    all_words = set(text.lower().split())
-    # Strong if an action verb appears in first 6 words OR anywhere in short bullets
-    return bool(ACTION_VERBS & (set(first_words) | (all_words if len(all_words) <= 12 else set())))
+    """Check whether the bullet contains a strong action verb (Fix 6: search all words)."""
+    return bool(ACTION_VERBS & set(text.lower().split()))
 
 
 def _has_result(text: str) -> bool:
@@ -161,7 +165,10 @@ def bullet_quality_score(bullet: Dict) -> float:
     confidence_map = {"high": 0.10, "medium": 0.05, "low": 0.0}
     conf_part = confidence_map.get(confidence, 0.0)
 
-    return round(min(star_part + metric_part + tool_part + conf_part, 1.0), 3)
+    # Fix 14: penalize bullets that exceed the word limit — they cost the reader time
+    word_penalty = -0.10 if s.word_count > MAX_BULLET_WORDS else 0.0
+
+    return round(min(max(star_part + metric_part + tool_part + conf_part + word_penalty, 0.0), 1.0), 3)
 
 
 def enforce_star(bullets: List[Dict]) -> List[Dict]:

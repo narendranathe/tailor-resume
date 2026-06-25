@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from collections import Counter
 from typing import Dict, List, Tuple
 
@@ -125,8 +126,9 @@ def analyze_category_coverage(
     results = {}
 
     for category, keywords in SIGNAL_TAXONOMY.items():
-        jd_hits = [kw for kw in keywords if kw in jd_lower]
-        resume_hits = [kw for kw in jd_hits if kw in resume_lower]
+        # Fix 10: word-boundary matching prevents "lead" hitting "leadership", "ml" hitting "html"
+        jd_hits = [kw for kw in keywords if re.search(r"\b" + re.escape(kw) + r"\b", jd_lower)]
+        resume_hits = [kw for kw in jd_hits if re.search(r"\b" + re.escape(kw) + r"\b", resume_lower)]
         jd_freq = sum(jd_lower.count(kw) for kw in jd_hits)
         coverage = len(resume_hits) / len(jd_hits) if jd_hits else 1.0
 
@@ -169,20 +171,23 @@ def build_gap_signals(
 
 
 def keyword_gaps(
-    jd_text: str, resume_text: str, min_freq: int = 2, top_n: int = 10
+    jd_text: str, resume_text: str, min_freq: int = 1, top_n: int = 10
 ) -> List[Tuple[str, int]]:
     jd_counts = Counter(tokenize(jd_text))
     resume_tokens = set(tokenize(resume_text))
     gaps = [
         (term, freq)
         for term, freq in jd_counts.items()
-        if freq >= min_freq and term not in resume_tokens and len(term) > 3
+        if freq >= min_freq and term not in resume_tokens and len(term) >= 2  # Fix 2 + Fix 11
     ]
     gaps.sort(key=lambda x: x[1], reverse=True)
     return gaps[:top_n]
 
 
-_SENIORITY_WORDS = {"senior", "lead", "principal", "staff", "architect", "manager", "director"}
+_SENIORITY_WORDS = {  # Fix 8: expanded from 7 to 14 signal words
+    "senior", "lead", "principal", "staff", "architect", "manager", "director",
+    "head", "vp", "chief", "founding", "owner", "president", "partner",
+}
 
 
 def estimate_ats_score(
@@ -215,17 +220,18 @@ def estimate_ats_score(
     resume_has_seniority = any(w in resume_lower for w in _SENIORITY_WORDS)
     seniority_match = 1.0 if (not jd_needs_seniority or resume_has_seniority) else 0.3
 
-    score = int((
+    # Fix 1: round() not int() — int() truncates 98.7→98, preventing 99+ scores
+    score = int(round((
         0.40 * keyword_overlap
         + 0.30 * avg_category
         + 0.20 * bullet_quality_avg
         + 0.10 * seniority_match
-    ) * 100)
+    ) * 100))
     return min(score, 100)
 
 
 def _extract_bullets_for_scoring(resume_text: str) -> List[Dict]:
-    """Extract bullet dicts from a JSON profile string, or return [] for plain text."""
+    """Extract bullet dicts from a JSON profile string; for plain text, regex-extract bullet lines (Fix 4)."""
     try:
         import json as _json
         profile = _json.loads(resume_text)
@@ -236,7 +242,27 @@ def _extract_bullets_for_scoring(resume_text: str) -> List[Dict]:
             bullets.extend(proj.get("bullets", []))
         return bullets
     except Exception:
-        return []
+        # Plain-text fallback: extract bullet-prefixed lines so quality scoring still runs
+        bullet_lines = re.findall(r"^[•\-\*]\s+(.+)$", resume_text, re.MULTILINE)
+        return [
+            {"text": line.strip(), "metrics": [], "tools": [], "confidence": "low"}
+            for line in bullet_lines
+        ]
+
+
+# Fix 9: per-category recommendation text covering all 10 SIGNAL_TAXONOMY categories
+_CATEGORY_RECS: Dict[str, str] = {
+    "Testing Ci Cd": "Add at least 2 bullets demonstrating tests + CI/CD ownership with incident/defect reduction metrics.",
+    "Data Quality Observability": "Add data quality implementation bullet with measurable outcome (tickets reduced, incidents prevented).",
+    "Orchestration": "Add orchestration bullet: show DAG ownership, SLA targets, and retry/backfill policy with reliability metrics.",
+    "Semantic Layer Governance": "Add governed metrics bullet: metric definitions, consumer count, or discrepancy reduction.",
+    "Architecture Finops": "Add architecture/FinOps bullet: cost savings ($X/month), compute reduction (%), or storage optimization.",
+    "Streaming Realtime": "Add streaming bullet: throughput (TPS), latency (ms), and fault-tolerance design (DLQ, idempotency).",
+    "Ml Ai Platform": "Add ML platform bullet: feature store, model serving reliability, or LLM-ready dataset build.",
+    "Cloud Infra": "Add cloud infra bullet: autoscaling wins, IaC ownership, or node consolidation with cost impact.",
+    "Leadership Ownership": "Add leadership bullet: team size, stakeholder scope, or mentoring with concrete outcomes.",
+    "Sql Data Modeling": "Add data modeling bullet: schema design decisions and query performance improvement.",
+}
 
 
 def run_analysis(
@@ -260,10 +286,10 @@ def run_analysis(
     recommendations = []
     if ats_score < 50:
         recommendations.append("Critical: fewer than half of JD keywords appear in resume — prioritize gap closure before any formatting work.")
-    if any(s.category == "Testing Ci Cd" for s in top_missing):
-        recommendations.append("Add at least 2 bullets demonstrating tests + CI/CD ownership with incident/defect reduction metrics.")
-    if any(s.category == "Data Quality Observability" for s in top_missing):
-        recommendations.append("Add data quality implementation bullet with measurable outcome (tickets reduced, incidents prevented).")
+    for s in top_missing:
+        rec = _CATEGORY_RECS.get(s.category)
+        if rec:
+            recommendations.append(rec)
     if not recommendations:
         recommendations.append("Good keyword coverage — focus on strengthening metrics and compressing to one page.")
 

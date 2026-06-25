@@ -646,7 +646,8 @@ class TestProfileToDict:
     def test_top_level_keys(self):
         profile = parse_latex(FULL_LATEX)
         d = profile_to_dict(profile)
-        assert set(d.keys()) == {"experience", "projects", "skills", "education", "certifications"}
+        # Enhancement #4/#5: summary and contact added to Profile dataclass
+        assert set(d.keys()) == {"experience", "projects", "skills", "education", "certifications", "summary", "contact"}
 
     def test_experience_is_list(self):
         profile = parse_latex(FULL_LATEX)

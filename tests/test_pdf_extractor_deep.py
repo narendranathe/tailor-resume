@@ -808,15 +808,17 @@ class TestParsePdfRouting:
 # ===========================================================================
 class TestSplitBulletBlockDeep:
     def test_blank_lines_split_paragraphs(self):
-        # A blank line flushes current; a period-followed-by-uppercase also
-        # starts a new sentence. Three logical sentences come back.
+        # Enhancement #6: blank line still separates paragraphs, but
+        # period-followed-by-uppercase within a 2-sentence paragraph no longer
+        # splits — that was over-splitting technical bullets (e.g. "Reduced 40%.
+        # Deployed via K8s."). Only 3+ sentence blocks split internally.
         out = pdfx._split_bullet_block(
             "Built X.\n"
             "More on X here.\n"
             "\n"
             "Migrated Y to cloud."
         )
-        assert len(out) == 3
+        assert len(out) == 2  # blank line → 2 paragraphs; no intra-paragraph split
 
     def test_no_sentence_boundary_keeps_single_block(self):
         out = pdfx._split_bullet_block(
