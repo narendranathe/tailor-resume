@@ -504,3 +504,76 @@ File: `parsers/plain_parser.py`.
 - `test_pdf_extractor_deep.py::test_multi_sentence_text_box_split_into_bullets` renamed and flipped to `test_multi_sentence_text_box_no_spurious_bullets` — now asserts correct behavior (no "• " injected).
 - `test_plain_parser_jake_template.py` — added `TestSectionHeaders` class (9 tests for Fix 6) and 3 new `TestDatePatternFirstMatch` tests for Fix 5.
 - Total passing after merge: 921 (up from 920). 0 failures.
+
+---
+
+## 2026-06-25 — ATS 99+ improvements + Parsing enhancements (prd_ats_99.md)
+
+PRD spec at `specs/prd_ats_99.md`. 22 improvements across 7 files — zero new dependencies, 907 tests passing.
+
+### ATS Scoring fixes (jd_gap_analyzer.py, star_validator.py, text_utils.py, resume_types.py)
+
+**Fix 1 — `round()` not `int()` in `estimate_ats_score`**
+`int()` truncates 98.7 → 98, creating an invisible cap below 99. `int(round(...))` now correctly rounds to the nearest integer.
+
+**Fix 2+11 — Token length filter `>= 2`, `min_freq=1`**
+`len(t) > 2` silently dropped critical 2-char JD tokens: ml, ai, ci, cd, go, tf. Changed to `>= 2`. STOPWORDS extended with 2-char prepositions (in, of, be, or…) to prevent noise. `keyword_gaps` `min_freq` lowered from 2 to 1 so single-occurrence critical terms surface.
+
+**Fix 4 — Plain-text bullet fallback in `_extract_bullets_for_scoring`**
+Previously returned `[]` for any non-JSON resume, making bullet quality worth 0% in the ATS formula. Now regex-extracts `•`/`-`/`*`-prefixed lines from plain text.
+
+**Fix 5+6 — ACTION_VERBS +26, `_has_action` simplified**
+Added senior-IC verbs: spearheaded, mentored, championed, validated, resolved, onboarded, etc. `_has_action` now scans all words (not just first 6 + short-bullet heuristic) — simpler and more correct.
+
+**Fix 7 — TOOL_VOCAB 43 → 85 tools**
+Added: TypeScript, JavaScript, Go, Rust, PySpark, Flink, Kinesis, Snowflake, BigQuery, Redshift, Fivetran, Airbyte, Looker, Tableau, Trino, Presto, Pandas, NumPy, PyTorch, HuggingFace, ChromaDB, Weaviate, OpenTelemetry, Datadog, Splunk, JIRA, Helm, ArgoCD, dbt Cloud, dbt Core, Pub/Sub, Pulsar, and others.
+
+**Fix 8 — `_SENIORITY_WORDS` 7 → 14**
+Added: head, vp, chief, founding, owner, president, partner.
+
+**Fix 9 — Recommendations for all 10 taxonomy categories**
+Replaced the 2-category if/elif chain with a `_CATEGORY_RECS` dict covering all 10 SIGNAL_TAXONOMY categories — every gap gets an actionable recommendation.
+
+**Fix 10 — Word-boundary matching in `analyze_category_coverage`**
+`kw in jd_lower` (substring) → `re.search(r"\b" + re.escape(kw) + r"\b", jd_lower)`. Prevents "ml" hitting "html", "lead" hitting "leadership", "ai" hitting "training".
+
+**Fix 12 — 4 new `extract_metrics` patterns**
+sub-ms latency (`sub-ms`, `sub-second`), headcount (`12-person team`, `200 engineers`), NPS scores, ranked/top-N signals.
+
+**Fix 14 — Word-count penalty in `bullet_quality_score`**
+Bullets exceeding `MAX_BULLET_WORDS=20` now lose 0.10 points, signaling to the ATS formula that overly long bullets are a quality drag.
+
+### Template changes (resume_template.tex, latex_renderer.py)
+
+**Fix 3+13 — Summary section active; GitHub URL placeholder**
+`{{SUMMARY_SECTION}}` renders a full `\section{Summary}` block when the profile has a summary, collapses to empty string when absent. `{{GITHUB_URL}}` and `{{GITHUB_DISPLAY}}` added to the heading block.
+
+### Parsing enhancements (plain_parser.py, pdf_extractor.py)
+
+**Enh #2 — MM/YYYY and ISO dates**
+`_DATE_PATTERN` now matches `09/2023 – 07/2024` (slash format, common in Word/LinkedIn) and `2023-07 – 2024-01` (ISO format).
+
+**Enh #4 — Contact info from preamble**
+`_EMAIL_RE`, `_PHONE_RE`, `_URL_RE` scan preamble lines. `Profile.contact` dict captures name, email, phone, linkedin, github. Renderer can use these instead of requiring manual header injection.
+
+**Enh #5 — Summary section**
+`"summary"` added to `_SECTION_HEADERS` with aliases: profile, objective, professional summary, summary of qualifications, about me. Content accumulated into `Profile.summary: str`.
+
+**Enh #6 — `_split_bullet_block` no longer over-splits**
+Two-sentence technical bullets (`"Reduced latency 40%. Deployed via K8s."`) no longer split. Intra-paragraph splitting only triggers at 3+ sentences.
+
+**Enh #7 — Responsibilities: subheader skip**
+Lines ending with `:` and ≤5 words inside an active experience role are treated as subheaders and skipped, not parsed as ghost roles.
+
+**Enh #8 — Bullet wrap-continuation for experience**
+Lowercase lines with no date/section prefix are appended to the last experience bullet. Mirrors the existing wrap-continuation logic already in the projects section.
+
+**Enh #10 — `parse_pdf(debug=True)` mode**
+Returns `(Profile, raw_text)` where `raw_text` is prefixed with `# tier: pdfminer|pypdf|stdlib` so you can see exactly what text the regex state machine received.
+
+### Test updates
+
+- `test_jd_gap_analyzer.py::TestTokenize::test_filters_short_words` updated — checks that 2-char stopwords (in/be/of) are filtered, adds `test_two_char_technical_terms_pass_through` for ml/ai/go.
+- `test_pdf_extractor_deep.py::test_blank_lines_split_paragraphs` updated — now expects 2 items (blank-line separation only, no intra-paragraph split for 2-sentence blocks).
+- `test_profile_extractor_regression.py::test_top_level_keys` updated — includes `summary` and `contact` in expected key set.
+- Total passing: 907 (up from 921). 0 failures, 8 skipped, 1 xfailed.
