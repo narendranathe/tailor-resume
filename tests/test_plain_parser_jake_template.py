@@ -23,7 +23,6 @@ import pytest
 
 from parsers.plain_parser import (
     _DATE_PATTERN,
-    _SECTION_HEADERS,
     _detect_section,
     _parse_education_oneliner,
     _parse_plain_resume_text,
