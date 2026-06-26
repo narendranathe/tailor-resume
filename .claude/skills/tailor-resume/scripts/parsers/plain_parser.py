@@ -137,6 +137,24 @@ _INST_KEYWORD_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Strategy 0: year-first normalization (moderncv, some Word templates).
+# "2014–2018  B.Sc. Mathematics  University of Edinburgh" — detect the
+# date prefix, strip it, continue parsing the remainder as the real content.
+_YEAR_FIRST_RE = re.compile(
+    r"^(?P<dates>\d{4}\s*[–\-]\s*(?:\d{4}|Present|Current|Now))\s{2,}(?P<rest>.+)",
+    re.IGNORECASE,
+)
+
+# Bare month-name date lines (e.g. "Jan 2022 – Dec 2023") must fall through.
+# Guard: only reject when month word is immediately followed by a digit/comma/space+digit
+# so "May University" and "March College" are NOT rejected.
+_BARE_DATE_RE = re.compile(
+    r"^(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|"
+    r"Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|"
+    r"Dec(?:ember)?)[.\s,]+\d{2,4}",
+    re.IGNORECASE,
+)
+
 
 def _parse_education_oneliner(line: str):  # noqa: C901  (complexity is intentional)
     """Try to parse a condensed single-line education entry.
@@ -158,10 +176,6 @@ def _parse_education_oneliner(line: str):  # noqa: C901  (complexity is intentio
     # Strategy 0: year-first normalization (moderncv, some Word templates).
     # "2014–2018  B.Sc. Mathematics  University of Edinburgh" — detect the
     # date prefix, strip it, continue parsing the remainder as the real content.
-    _YEAR_FIRST_RE = re.compile(
-        r"^(?P<dates>\d{4}\s*[–\-]\s*(?:\d{4}|Present|Current|Now))\s{2,}(?P<rest>.+)",
-        re.IGNORECASE,
-    )
     yf_m = _YEAR_FIRST_RE.match(s)
     extracted_year_first_dates: str = ""
     if yf_m:
@@ -180,12 +194,6 @@ def _parse_education_oneliner(line: str):  # noqa: C901  (complexity is intentio
     # Bare month-name date lines (e.g. "Jan 2022 – Dec 2023") must fall through.
     # Guard: only reject when month word is immediately followed by a digit/comma/space+digit
     # so "May University" and "March College" are NOT rejected.
-    _BARE_DATE_RE = re.compile(
-        r"^(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|"
-        r"Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|"
-        r"Dec(?:ember)?)[.\s,]+\d{2,4}",
-        re.IGNORECASE,
-    )
     if _BARE_DATE_RE.match(s):
         return None
 

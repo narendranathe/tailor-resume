@@ -84,6 +84,14 @@ def execute(config: TailorConfig) -> TailorResult:
     if not config.artifacts:
         raise ValueError("At least one artifact is required.")
 
+    # Early existence check — gives a clear error instead of a cryptic KeyError
+    # or opaque FileNotFoundError deep inside the renderer.
+    if not Path(config.template_path).exists():
+        raise FileNotFoundError(
+            f"Template not found: {config.template_path}. "
+            "Ensure the repository was cloned in full and the templates/ directory is present."
+        )
+
     profiles = []
     for path, fmt in config.artifacts:
         parser = _PARSERS.get(fmt)

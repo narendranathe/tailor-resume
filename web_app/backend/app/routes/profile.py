@@ -16,6 +16,12 @@ from pydantic import BaseModel
 from app.auth import get_current_user
 from app.db.supabase import get_profile_store
 
+# ---------------------------------------------------------------------------
+# File-size limit (FIX 2)
+# ---------------------------------------------------------------------------
+
+MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10 MB
+
 router = APIRouter(tags=["profile"])
 
 
@@ -57,6 +63,12 @@ async def upsert_profile(
     from pathlib import Path
 
     artifact_bytes = await artifact.read()
+    # FIX 2 — file size guard
+    if len(artifact_bytes) > MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="File too large. Max size: 10 MB.",
+        )
     artifact_filename = artifact.filename or "resume"
     ext = Path(artifact_filename).suffix.lower()
 

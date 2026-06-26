@@ -41,3 +41,37 @@ jobs:
 
       - name: Coverage report
         run: python -m pytest tests/ --cov=".claude/skills/tailor-resume/scripts" --cov-config=.coveragerc --cov-report=term-missing --cov-fail-under=86
+
+  test-web:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install core + web backend dependencies
+        run: |
+          pip install -r requirements.txt -r requirements-dev.txt
+          pip install -r web_app/backend/requirements.txt
+
+      - name: Run web backend tests
+        run: |
+          PYTHONPATH=web_app/backend python -m pytest \
+            tests/test_billing.py \
+            tests/test_web_api.py \
+            tests/test_api_server.py \
+            tests/test_setup_routes.py \
+            tests/test_profile_patch.py \
+            tests/test_mcp_server.py \
+            -v --tb=short
+        env:
+          ENVIRONMENT: test
+          CLERK_PEM_KEY: ""
+          SUPABASE_URL: ""
+          STRIPE_SECRET_KEY: ""

@@ -195,7 +195,8 @@ class TestFixtureAOrderedText:
         assert r.title == "Data Engineer"
         assert r.company == "ExponentHR"
         assert r.location == "Dallas, TX"
-        assert r.start == "July 2024"
+        # FIX 4: dates are normalized to abbreviated month + year
+        assert r.start == "Jul 2024"
         assert r.end == "Present"
         assert len(r.bullets) == 2
 
@@ -204,9 +205,10 @@ class TestFixtureAOrderedText:
         assert r.title == "Data Engineer"
         assert "Missouri" in r.company
         assert r.location == "Rolla, MO"
-        # #102 — start date must be the full 'Aug. 2023', not blank
+        # #102 — start date must not be blank; FIX 4 normalizes to "Aug 2023"
         assert r.start.startswith("Aug")
-        assert r.end == "July 2024"
+        # FIX 4: dates are normalized to abbreviated month + year
+        assert r.end == "Jul 2024"
         assert len(r.bullets) == 2
 
     def test_two_projects(self, profile):

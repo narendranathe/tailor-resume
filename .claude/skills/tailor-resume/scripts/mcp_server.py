@@ -2,11 +2,12 @@
 mcp_server.py
 MCP server for the tailor-resume pipeline.
 
-Exposes four tools that Claude Code can call directly:
+Exposes five tools that Claude Code can call directly:
   - extract_profile   parse resume text -> profile JSON
   - analyze_gap       JD vs profile -> gap report JSON
   - render_latex      profile + header -> writes resume.tex
   - run_pipeline      full pipeline in one call
+  - ingest_github     fetch GitHub repos for a user -> profile JSON
 
 Usage (stdio, for Claude Code):
     python mcp_server.py
@@ -267,6 +268,51 @@ def run_pipeline(
             "user_id": user_id,
             "warnings": warnings,
         }, indent=2)
+    except Exception as exc:
+        return json.dumps({"error": str(exc)})
+
+
+# ---------------------------------------------------------------------------
+# Tool 5: ingest_github
+# ---------------------------------------------------------------------------
+@mcp.tool()
+def ingest_github(username: str) -> str:
+    """Ingest GitHub repos for a user and return structured profile JSON.
+
+    Fetches public repos (or private with GITHUB_TOKEN env var) for the given
+    GitHub username, extracts project bullets from descriptions and READMEs,
+    and returns a Profile dict with the ``projects`` field populated.
+
+    Args:
+        username: GitHub username (e.g. 'torvalds').  Public repos are fetched
+                  without authentication (60 req/hr limit).  Set GITHUB_TOKEN
+                  env var for private repos and 5000 req/hr.
+
+    Returns:
+        JSON string of the extracted Profile with projects populated from GitHub
+        (keys: experience, projects, skills, education, certifications, summary,
+        contact).  Each project has: name, description, bullets, tools, url,
+        stars, source.
+        On import error: {"error": "github_ingester dependencies not installed..."}
+        On any other error: {"error": "<message>"}
+    """
+    try:
+        from github_ingester import inject_github_projects  # noqa: PLC0415
+        from resume_types import profile_to_dict  # noqa: PLC0415
+
+        empty_profile: dict = {
+            "experience": [], "projects": [], "skills": [],
+            "education": [], "certifications": [], "summary": "", "contact": {},
+        }
+        profile = inject_github_projects(empty_profile, username)
+        return json.dumps(profile_to_dict(profile) if hasattr(profile, "__dataclass_fields__") else profile, indent=2)
+    except ImportError:
+        return json.dumps({
+            "error": (
+                "github_ingester dependencies not installed. "
+                "Run: pip install requests PyGithub"
+            )
+        })
     except Exception as exc:
         return json.dumps({"error": str(exc)})
 

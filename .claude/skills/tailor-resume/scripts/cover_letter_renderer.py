@@ -19,11 +19,14 @@ Generation methods:
 from __future__ import annotations
 
 import json
+import logging
 import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 _SCRIPTS = Path(__file__).parent
 if str(_SCRIPTS) not in sys.path:
@@ -124,7 +127,8 @@ def _build_claude(
         para1, para2 = _enforce_word_limit(para1, para2, _MAX_WORDS)
         return _assemble(para1, para2, header, method_used="claude", out_dir=out_dir)
 
-    except Exception:
+    except Exception as exc:
+        logger.exception("Cover letter Claude call failed: %s", exc)
         result = _build_template(profile_dict, report, header, jd_text, out_dir=out_dir)
         return CoverLetterResult(
             tex=result.tex,
@@ -312,7 +316,8 @@ def _assemble(
         _write_docx(para1, para2, header, target)
         if Path(target).exists() and Path(target).stat().st_size > 0:
             docx_path = target
-    except Exception:
+    except Exception as exc:
+        logger.warning("DOCX generation failed, skipping: %s", exc)
         docx_path = None
 
     return CoverLetterResult(

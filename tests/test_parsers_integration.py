@@ -137,11 +137,16 @@ class TestNormalizer:
     @pytest.mark.parametrize(
         "raw, expected",
         [
+            # Already-normalized abbreviated month input passes through unchanged.
             ("Jan 2022 – Present", ("Jan 2022", "Present")),
-            ("July 2024 -- Present", ("July 2024", "Present")),
+            # FIX 4: full month names are normalized to 3-letter abbreviations.
+            ("July 2024 -- Present", ("Jul 2024", "Present")),
+            # Year-only ranges pass through (no month to normalize).
             ("2019 - 2022", ("2019", "2022")),
+            # Abbreviated months already correct — no change.
             ("Mar 2022 — Aug 2023", ("Mar 2022", "Aug 2023")),
             ("Aug 2017--May 2019", ("Aug 2017", "May 2019")),
+            # Non-date strings pass through as-is.
             ("Single date", ("Single date", "")),
         ],
     )
@@ -198,7 +203,8 @@ class TestLatexParser:
         senior = profile.experience[0]
         assert "Senior Data Engineer" in senior.title
         assert "DataWorks" in senior.company
-        assert senior.start.startswith("March 2022")
+        # FIX 4: full month names are normalized to abbreviated form.
+        assert senior.start.startswith("Mar 2022")
         assert "Present" in senior.end
         assert senior.location == "Austin, TX"
 

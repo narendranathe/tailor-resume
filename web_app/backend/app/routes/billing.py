@@ -8,8 +8,12 @@ GET  /usage             — returns {plan, count_this_month, limit} for authenti
 """
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from pydantic import BaseModel
+
+logger = logging.getLogger(__name__)
 
 from app.auth import get_current_user
 from app.config import settings
@@ -168,8 +172,15 @@ def _revert_plan_by_customer(stripe_customer_id: str) -> None:
             if resp.data:
                 user_id = resp.data["user_id"]
                 set_user_plan(user_id, "free")
-        except Exception:
-            pass  # Best-effort; log in production
+        except Exception as exc:
+            logger.exception(
+                "Failed to revert plan for customer %s: %s", stripe_customer_id, exc
+            )
+            # Re-raise so Stripe retries the webhook rather than marking it as delivered
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Webhook processing failed — will retry",
+            ) from exc
     else:
         import sqlite3
         from pathlib import Path

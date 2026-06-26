@@ -231,13 +231,15 @@ def build_from_profile(
     replacements: Dict[str, str] = {
         "NAME": escape(h.get("name", "Your Name")),
         "PHONE": escape(h.get("phone", "")),
-        "EMAIL": h.get("email", ""),
+        # EMAIL: display text (inside \underline{}) must be escaped; the href URL
+        # arg is left raw so hyperref handles it correctly.
+        "EMAIL": escape(h.get("email", "")),
         "LINKEDIN_URL": h.get("linkedin", ""),
-        "LINKEDIN_DISPLAY": h.get("linkedin", "").replace("https://", ""),
+        "LINKEDIN_DISPLAY": escape(h.get("linkedin", "").replace("https://", "")),
         "GITHUB_URL": h.get("github", ""),
-        "GITHUB_DISPLAY": h.get("github", "").replace("https://", ""),
+        "GITHUB_DISPLAY": escape(h.get("github", "").replace("https://", "")),
         "PORTFOLIO_URL": h.get("portfolio", ""),
-        "PORTFOLIO_DISPLAY": h.get("portfolio", "").replace("https://", ""),
+        "PORTFOLIO_DISPLAY": escape(h.get("portfolio", "").replace("https://", "")),
         "EDUCATION_SECTION": render_education(profile.get("education", [])),
         "EXPERIENCE_SECTION": render_experience(profile.get("experience", [])),
         "PROJECTS_SECTION": render_projects(profile.get("projects", [])),
@@ -258,6 +260,133 @@ def build_from_profile(
 
 
 # ---------------------------------------------------------------------------
+# DOCX renderer
+# ---------------------------------------------------------------------------
+
+def build_docx_from_profile(profile: Dict, output_path: str = "resume.docx", header: Dict | None = None) -> None:
+    """Build a .docx resume from a canonical profile dict using python-docx."""
+    from docx import Document
+    from docx.shared import Pt, Inches
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+
+    h = header or {}
+    doc = Document()
+
+    # Page margins
+    for section in doc.sections:
+        section.top_margin = Inches(0.5)
+        section.bottom_margin = Inches(0.5)
+        section.left_margin = Inches(0.75)
+        section.right_margin = Inches(0.75)
+
+    # Header: Name
+    name_para = doc.add_paragraph()
+    name_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    name_run = name_para.add_run(h.get("name", ""))
+    name_run.bold = True
+    name_run.font.size = Pt(16)
+
+    # Contact line
+    contact_parts = [p for p in [h.get("email", ""), h.get("phone", ""), h.get("linkedin", ""), h.get("github", "")] if p]
+    if contact_parts:
+        cp = doc.add_paragraph(" | ".join(contact_parts))
+        cp.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        cp.runs[0].font.size = Pt(9)
+
+    def add_section_heading(title):
+        p = doc.add_paragraph()
+        run = p.add_run(title.upper())
+        run.bold = True
+        run.font.size = Pt(10)
+        p.paragraph_format.space_before = Pt(8)
+        p.paragraph_format.space_after = Pt(2)
+        # Add a bottom border via XML (simple approach)
+        from docx.oxml.ns import qn
+        from docx.oxml import OxmlElement
+        pPr = p._p.get_or_add_pPr()
+        pBdr = OxmlElement('w:pBdr')
+        bottom = OxmlElement('w:bottom')
+        bottom.set(qn('w:val'), 'single')
+        bottom.set(qn('w:sz'), '4')
+        bottom.set(qn('w:space'), '1')
+        bottom.set(qn('w:color'), '000000')
+        pBdr.append(bottom)
+        pPr.append(pBdr)
+
+    # Summary
+    summary = profile.get("summary", "")
+    if summary and summary.strip():
+        add_section_heading("Summary")
+        doc.add_paragraph(summary.strip()).runs[0].font.size = Pt(9)
+
+    # Experience
+    experience = profile.get("experience", [])
+    if experience:
+        add_section_heading("Experience")
+        for role in experience:
+            p = doc.add_paragraph()
+            p.paragraph_format.space_before = Pt(4)
+            title_run = p.add_run(role.get("title", ""))
+            title_run.bold = True
+            title_run.font.size = Pt(10)
+            company = role.get("company", "")
+            start = role.get("start", "")
+            end = role.get("end", "Present")
+            dates = f"{start} – {end}" if start else end
+            right_run = p.add_run(f"  {company}  |  {dates}")
+            right_run.font.size = Pt(9)
+            for bullet in role.get("bullets", [])[:6]:
+                bp = doc.add_paragraph(style="List Bullet")
+                bp.add_run(bullet.get("text", "")).font.size = Pt(9)
+                bp.paragraph_format.left_indent = Inches(0.25)
+
+    # Education
+    education = profile.get("education", [])
+    if education:
+        add_section_heading("Education")
+        for edu in education:
+            p = doc.add_paragraph()
+            p.paragraph_format.space_before = Pt(2)
+            inst = edu.get("institution", edu.get("school", ""))
+            deg = edu.get("degree", "")
+            dates = edu.get("dates", edu.get("date", ""))
+            inst_run = p.add_run(inst)
+            inst_run.bold = True
+            inst_run.font.size = Pt(10)
+            if deg or dates:
+                p.add_run(f"  |  {deg}  {dates}").font.size = Pt(9)
+
+    # Skills
+    skills = profile.get("skills", [])
+    if skills:
+        add_section_heading("Skills")
+        skill_text = ", ".join(skills) if isinstance(skills, list) else str(skills)
+        doc.add_paragraph(skill_text).runs[0].font.size = Pt(9)
+
+    # Projects
+    projects = profile.get("projects", [])
+    if projects:
+        add_section_heading("Projects")
+        for proj in projects:
+            p = doc.add_paragraph()
+            p.paragraph_format.space_before = Pt(4)
+            p.add_run(proj.get("name", "")).bold = True
+            p.runs[-1].font.size = Pt(10)
+            tech = ", ".join(proj.get("tech", []))
+            if tech:
+                p.add_run(f"  |  {tech}").font.size = Pt(9)
+            for bullet in proj.get("bullets", [])[:4]:
+                bp = doc.add_paragraph(style="List Bullet")
+                bp.add_run(bullet.get("text", "")).font.size = Pt(9)
+                bp.paragraph_format.left_indent = Inches(0.25)
+
+    from pathlib import Path
+    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+    doc.save(output_path)
+    print(f"[OK] DOCX resume written to: {output_path}")
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 def main() -> None:
@@ -275,6 +404,7 @@ def main() -> None:
     parser.add_argument("--linkedin", default="", help="LinkedIn URL (runtime PII)")
     parser.add_argument("--github", default="", help="GitHub URL (runtime PII)")
     parser.add_argument("--portfolio", default="", help="Portfolio URL (runtime PII)")
+    parser.add_argument("--docx", action="store_true", help="Emit a .docx file instead of (or in addition to) .tex")
     args = parser.parse_args()
 
     with open(args.profile, encoding="utf-8") as f:
@@ -289,7 +419,11 @@ def main() -> None:
         "portfolio": args.portfolio,
     }
 
-    build_from_profile(profile, args.template, args.output, header)
+    if args.docx:
+        docx_output = args.output if args.output.endswith(".docx") else str(Path(args.output).with_suffix(".docx"))
+        build_docx_from_profile(profile, docx_output, header)
+    else:
+        build_from_profile(profile, args.template, args.output, header)
 
 
 if __name__ == "__main__":

@@ -44,6 +44,8 @@ ACTION_VERBS: set = {
     "prioritized", "proposed", "prototyped", "provisioned", "refined",
     "resolved", "reviewed", "secured", "spearheaded", "triaged",
     "validated",
+    # FIX 2a: additional senior-IC verbs not previously in set
+    "created", "managed",
 }
 
 # Outcome/result signal words (complement to numeric patterns)

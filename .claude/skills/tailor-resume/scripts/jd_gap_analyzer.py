@@ -184,9 +184,11 @@ def keyword_gaps(
     return gaps[:top_n]
 
 
-_SENIORITY_WORDS = {  # Fix 8: expanded from 7 to 14 signal words
+_SENIORITY_WORDS = {  # Fix 8: expanded from 7 to 14 signal words; sprint adds multi-word forms
     "senior", "lead", "principal", "staff", "architect", "manager", "director",
     "head", "vp", "chief", "founding", "owner", "president", "partner",
+    # Multi-word and additional seniority signals (FIX 2c)
+    "tech lead", "head of", "distinguished", "fellow",
 }
 
 
@@ -202,7 +204,12 @@ def estimate_ats_score(
       30% category coverage   — signal taxonomy average
       20% bullet quality      — STAR + metric density (pass 0.0 for backward compat)
       10% seniority signal    — JD seniority words echoed in resume
+
+    Side-effect (FIX 3): stores breakdown string in module-level _last_ats_breakdown
+    so run_analysis() can append it to recommendations without changing return type.
     """
+    global _last_ats_breakdown
+
     jd_tokens = set(tokenize(jd_text))
     resume_tokens = set(tokenize(resume_text))
     keyword_overlap = len(jd_tokens & resume_tokens) / max(len(jd_tokens), 1)
@@ -220,6 +227,11 @@ def estimate_ats_score(
     resume_has_seniority = any(w in resume_lower for w in _SENIORITY_WORDS)
     seniority_match = 1.0 if (not jd_needs_seniority or resume_has_seniority) else 0.3
 
+    kw_pct = int(round(keyword_overlap * 100))
+    cat_pct = int(round(avg_category * 100))
+    bq_pct = int(round(bullet_quality_avg * 100))
+    sen_pct = int(round(seniority_match * 100))
+
     # Fix 1: round() not int() — int() truncates 98.7→98, preventing 99+ scores
     score = int(round((
         0.40 * keyword_overlap
@@ -227,7 +239,21 @@ def estimate_ats_score(
         + 0.20 * bullet_quality_avg
         + 0.10 * seniority_match
     ) * 100))
-    return min(score, 100)
+    score = min(score, 100)
+
+    # FIX 3: store breakdown for run_analysis() to surface in recommendations
+    _last_ats_breakdown = (
+        f"ATS Score Breakdown: Keyword {kw_pct}% × 40% + "
+        f"Category {cat_pct}% × 30% + "
+        f"Bullet Quality {bq_pct}% × 20% + "
+        f"Seniority {sen_pct}% × 10% = {score}"
+    )
+
+    return score
+
+
+# Module-level store for ATS breakdown (populated by estimate_ats_score, consumed by run_analysis)
+_last_ats_breakdown: str = ""
 
 
 def _extract_bullets_for_scoring(resume_text: str) -> List[Dict]:
@@ -241,27 +267,32 @@ def _extract_bullets_for_scoring(resume_text: str) -> List[Dict]:
         for proj in profile.get("projects", []):
             bullets.extend(proj.get("bullets", []))
         return bullets
-    except Exception:
+    except Exception as exc:
+        # FIX 5: log the exception rather than silently swallowing it
+        import logging
+        logging.getLogger(__name__).warning("bullet scoring failed: %s", exc)
         # Plain-text fallback: extract bullet-prefixed lines so quality scoring still runs
         bullet_lines = re.findall(r"^[•\-\*]\s+(.+)$", resume_text, re.MULTILINE)
+        # FIX 1c: use confidence='medium' (not 'low') so plain-text bullets contribute to ATS score
         return [
-            {"text": line.strip(), "metrics": [], "tools": [], "confidence": "low"}
+            {"text": line.strip(), "metrics": [], "tools": [], "confidence": "medium"}
             for line in bullet_lines
         ]
 
 
-# Fix 9: per-category recommendation text covering all 10 SIGNAL_TAXONOMY categories
+# FIX 4: per-category recommendation text — keys must EXACTLY match SIGNAL_TAXONOMY (snake_case)
+# Previously used .title() form ("Testing Ci Cd") which never matched, so all recs were dropped.
 _CATEGORY_RECS: Dict[str, str] = {
-    "Testing Ci Cd": "Add at least 2 bullets demonstrating tests + CI/CD ownership with incident/defect reduction metrics.",
-    "Data Quality Observability": "Add data quality implementation bullet with measurable outcome (tickets reduced, incidents prevented).",
-    "Orchestration": "Add orchestration bullet: show DAG ownership, SLA targets, and retry/backfill policy with reliability metrics.",
-    "Semantic Layer Governance": "Add governed metrics bullet: metric definitions, consumer count, or discrepancy reduction.",
-    "Architecture Finops": "Add architecture/FinOps bullet: cost savings ($X/month), compute reduction (%), or storage optimization.",
-    "Streaming Realtime": "Add streaming bullet: throughput (TPS), latency (ms), and fault-tolerance design (DLQ, idempotency).",
-    "Ml Ai Platform": "Add ML platform bullet: feature store, model serving reliability, or LLM-ready dataset build.",
-    "Cloud Infra": "Add cloud infra bullet: autoscaling wins, IaC ownership, or node consolidation with cost impact.",
-    "Leadership Ownership": "Add leadership bullet: team size, stakeholder scope, or mentoring with concrete outcomes.",
-    "Sql Data Modeling": "Add data modeling bullet: schema design decisions and query performance improvement.",
+    "testing_ci_cd": "Add at least 2 bullets demonstrating tests + CI/CD ownership with incident/defect reduction metrics.",
+    "data_quality_observability": "Add data quality implementation bullet with measurable outcome (tickets reduced, incidents prevented).",
+    "orchestration": "Add orchestration bullet: show DAG ownership, SLA targets, and retry/backfill policy with reliability metrics.",
+    "semantic_layer_governance": "Add governed metrics bullet: metric definitions, consumer count, or discrepancy reduction.",
+    "architecture_finops": "Add architecture/FinOps bullet: cost savings ($X/month), compute reduction (%), or storage optimization.",
+    "streaming_realtime": "Add streaming bullet: throughput (TPS), latency (ms), and fault-tolerance design (DLQ, idempotency).",
+    "ml_ai_platform": "Add ML platform bullet: feature store, model serving reliability, or LLM-ready dataset build.",
+    "cloud_infra": "Add cloud infra bullet: autoscaling wins, IaC ownership, or node consolidation with cost impact.",
+    "leadership_ownership": "Add leadership bullet: team size, stakeholder scope, or mentoring with concrete outcomes.",
+    "sql_data_modeling": "Add data modeling bullet: schema design decisions and query performance improvement.",
 }
 
 
@@ -287,11 +318,16 @@ def run_analysis(
     if ats_score < 50:
         recommendations.append("Critical: fewer than half of JD keywords appear in resume — prioritize gap closure before any formatting work.")
     for s in top_missing:
-        rec = _CATEGORY_RECS.get(s.category)
+        # FIX 4: convert back from .title() display form to snake_case for _CATEGORY_RECS lookup
+        category_key = s.category.lower().replace(" ", "_")
+        rec = _CATEGORY_RECS.get(category_key)
         if rec:
             recommendations.append(rec)
     if not recommendations:
         recommendations.append("Good keyword coverage — focus on strengthening metrics and compressing to one page.")
+    # FIX 3: append ATS breakdown line surfaced by estimate_ats_score()
+    if _last_ats_breakdown:
+        recommendations.append(_last_ats_breakdown)
 
     return GapReport(
         top_missing=top_missing,

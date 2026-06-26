@@ -842,8 +842,9 @@ def parse_pdf(
         text = _extract_pdf_text_pdfminer(file_bytes)
         if text.strip():
             tier_used = "pdfminer"
-    except Exception:
-        pass
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).warning("PDF extraction tier failed: %s", exc)
 
     if not text.strip():
         try:
