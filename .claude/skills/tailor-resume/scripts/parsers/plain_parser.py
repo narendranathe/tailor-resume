@@ -110,37 +110,88 @@ _PHONE_RE = re.compile(r"[\+\(]?[\d\s\-\(\)]{7,15}\d")
 _URL_RE   = re.compile(r"https?://\S+|linkedin\.com/\S+|github\.com/\S+", re.IGNORECASE)
 
 # Detects GPA within a text fragment.
-_GPA_RE = re.compile(r"GPA[:\s]+(?P<gpa>[\d.]+)", re.IGNORECASE)
+_GPA_RE = re.compile(
+    r"(?<![A-Za-z])(?:C)?GPA[:\s]+(?P<gpa>[\d.]+(?:/[\d.]+)?)",
+    re.IGNORECASE,
+)
 # Matches a line that starts with a month name — these are bare date ranges,
 # not institution names, so the one-liner should not match them.
 _STARTS_WITH_MONTH_RE = re.compile(
     r"^(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|"
-    r"Jul(?:y)?|Aug(?:ust)?|Sep(?:t)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\b",
+    r"Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|"
+    r"Dec(?:ember)?)\b",
     re.IGNORECASE,
 )
 
 
-def _parse_education_oneliner(line: str):
+# Degree-first detection helpers — used in _parse_education_oneliner.
+_DEGREE_FIRST_RE = re.compile(
+    r"^(?:B\.?(?:Tech|Sc|A|S|E|Ed|Eng)?\.?|M\.?(?:Tech|Sc|S|A|E|Ed|Eng|B|Phil)?\.?|"
+    r"Ph\.?D\.?|Dr\.?|MBA|LLB|BCA|MCA|Bachelor|Master|Doctor|Associate|Diploma|"
+    r"Doctor\s+of)\b",
+    re.IGNORECASE,
+)
+_INST_KEYWORD_RE = re.compile(
+    r"\b(?:University|College|Institute|School|Technology|Tech|Polytechnic|Academy|"
+    r"MIT|IIT|IIM|NIT|BITS|UCLA|NYU|CMU|LSE|ETH)\b",
+    re.IGNORECASE,
+)
+
+
+def _parse_education_oneliner(line: str):  # noqa: C901  (complexity is intentional)
     """Try to parse a condensed single-line education entry.
 
     Handles formats like:
       "Institution — Degree | GPA: X.X | Jan YYYY – Dec YYYY"   (pipe/em-dash)
       "Institution | Degree | Dates"                              (all-pipe)
       "Institution  Degree  Dates"                               (double-space)
+      "Degree, Institution, Year"                                (comma-separated)
+      "Degree | Institution | Dates"                             (degree-first)
 
     Returns a dict with institution/degree/dates/location on match,
     or None to signal fallthrough to the existing multi-line heuristic.
     """
     s = line.strip()
-    if not s or not s[0].isupper():
+    if not s:
         return None
-    # Bare date lines (e.g. "Jan 2022 – Dec 2023") must fall through.
-    if _STARTS_WITH_MONTH_RE.match(s) or s[0].isdigit():
+
+    # Strategy 0: year-first normalization (moderncv, some Word templates).
+    # "2014–2018  B.Sc. Mathematics  University of Edinburgh" — detect the
+    # date prefix, strip it, continue parsing the remainder as the real content.
+    _YEAR_FIRST_RE = re.compile(
+        r"^(?P<dates>\d{4}\s*[–\-]\s*(?:\d{4}|Present|Current|Now))\s{2,}(?P<rest>.+)",
+        re.IGNORECASE,
+    )
+    yf_m = _YEAR_FIRST_RE.match(s)
+    extracted_year_first_dates: str = ""
+    if yf_m:
+        extracted_year_first_dates = yf_m.group("dates").strip()
+        s = yf_m.group("rest").strip()
+        # Re-check guards after stripping the date prefix.
+        if not s or not s[0].isupper():
+            return None
+    elif s[0].isdigit():
+        # Bare date line — fall through to the multi-line heuristic.
+        return None
+    elif not s[0].isupper():
+        # Non-uppercase, non-digit first char: not an institution or degree line.
+        return None
+
+    # Bare month-name date lines (e.g. "Jan 2022 – Dec 2023") must fall through.
+    # Guard: only reject when month word is immediately followed by a digit/comma/space+digit
+    # so "May University" and "March College" are NOT rejected.
+    _BARE_DATE_RE = re.compile(
+        r"^(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|"
+        r"Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|"
+        r"Dec(?:ember)?)[.\s,]+\d{2,4}",
+        re.IGNORECASE,
+    )
+    if _BARE_DATE_RE.match(s):
         return None
 
     # --- Strategy 1: pipe (|) or em-dash (—) field separator ---
-    # En-dash (–) is NOT used as a field separator here: it appears inside date
-    # ranges and would split "Jan 2022 – Dec 2023" incorrectly.
+    # Split on all pipes and em-dashes simultaneously (preserves backward compat
+    # for lines that mix both, e.g. "Missouri S&T — M.S. ... | GPA | Dates").
     if re.search(r"[|—]", s):
         raw_parts = re.split(r"\s*[|—]\s*", s)
     else:
@@ -148,30 +199,87 @@ def _parse_education_oneliner(line: str):
         raw_parts = re.split(r"\s{2,}", s)
 
     if len(raw_parts) < 2:
-        return None
+        # --- Strategy 3: comma-delimited fallback (AltaCV, international formats) ---
+        comma_parts = [p.strip() for p in s.split(",") if p.strip()]
+        _has_deg = any(_DEGREE_FIRST_RE.search(p) for p in comma_parts)
+        _has_inst = any(_INST_KEYWORD_RE.search(p) for p in comma_parts)
+        if 2 <= len(comma_parts) <= 5 and (_has_deg or _has_inst):
+            raw_parts = comma_parts
+        else:
+            return None
+
+    # --- Degree-first detection: swap parts[0] and parts[1] if needed ---
+    # Applies to all strategies after splitting.
+    if (_DEGREE_FIRST_RE.match(raw_parts[0].strip())
+            and len(raw_parts) >= 2
+            and not _INST_KEYWORD_RE.search(raw_parts[0])):
+        # First token looks like a degree; find the best institution candidate.
+        # Prefer a token that explicitly contains an institution keyword; otherwise
+        # take the first non-date, non-GPA, non-digit token after index 0.
+        best_inst_idx = None
+        for idx in range(1, len(raw_parts)):
+            p = raw_parts[idx].strip()
+            if _INST_KEYWORD_RE.search(p):
+                best_inst_idx = idx
+                break
+        if best_inst_idx is None:
+            # No clear institution keyword; heuristic: first non-numeric uppercase token.
+            for idx in range(1, len(raw_parts)):
+                p = raw_parts[idx].strip()
+                if not _DATE_PATTERN.search(p) and not _GPA_RE.search(p) and p and p[0].isupper():
+                    best_inst_idx = idx
+                    break
+        if best_inst_idx is not None:
+            new_parts = list(raw_parts)
+            new_parts[0], new_parts[best_inst_idx] = new_parts[best_inst_idx], new_parts[0]
+            raw_parts = new_parts
 
     inst = raw_parts[0].strip().rstrip("–—-,")
-    if not inst or not inst[0].isupper() or _STARTS_WITH_MONTH_RE.match(inst):
+    if not inst or not inst[0].isupper() or _BARE_DATE_RE.match(inst):
         return None
 
-    # Rejoin remaining parts for scanning
-    rest = " | ".join(raw_parts[1:])
+    # Fix 2: hyphen-minus used as institution–degree separator (e.g. "May University - B.S. Biology").
+    # If `inst` contains " - " and the right-hand side starts with a degree token, split further.
+    _hyph_match = re.search(r'\s+-\s+', inst)
+    if _hyph_match:
+        _right = inst[_hyph_match.end():]
+        if _DEGREE_FIRST_RE.search(_right):
+            inst = inst[:_hyph_match.start()].strip()
+            # Prepend the extracted degree fragment to raw_parts so the classifier sees it.
+            raw_parts = [raw_parts[0][:_hyph_match.start()].strip()] + [_right] + list(raw_parts[1:])
 
-    # Extract GPA
+    # --- Classify remaining tokens directly (avoid pipe-artifact in rejoined string) ---
+    mid_parts = [p.strip() for p in raw_parts[1:] if p.strip()]
+    dates: str = extracted_year_first_dates
     gpa: str = ""
-    gm = _GPA_RE.search(rest)
-    if gm:
-        gpa = gm.group("gpa")
-        rest = rest[: gm.start()].rstrip(" |–—") + rest[gm.end() :]
+    deg_parts: list = []
 
-    # Extract date range (take from the first match to end of string)
-    dates: str = ""
-    dm = _DATE_PATTERN.search(rest)
-    if dm:
-        dates = rest[dm.start() :].strip()
-        rest = rest[: dm.start()].strip(" |–—")
+    for p in mid_parts:
+        # Check GPA first (before date) so "GPA: 4.0/4.0" is not consumed by date.
+        gm = _GPA_RE.search(p)
+        if gm and not gpa:
+            gpa = gm.group("gpa")
+            # Keep any non-GPA fragment of this token.
+            leftover = (p[:gm.start()] + p[gm.end():]).strip(" |–—-")
+            if leftover and not _DATE_PATTERN.search(leftover):
+                deg_parts.append(leftover)
+            continue
+        dm = _DATE_PATTERN.search(p)
+        if dm and not dates:
+            # Extract only the matched span, not trailing junk.
+            dates = dm.group(0).strip()
+            # If there is content before the date in this token, it belongs to degree.
+            pre_date = p[:dm.start()].strip(" |–—-")
+            if pre_date:
+                deg_parts.append(pre_date)
+            continue
+        # Fix 1: bare 4-digit year not matched by _DATE_PATTERN (e.g. "2018").
+        if not dates and re.fullmatch(r'\d{4}', p):
+            dates = p
+            continue
+        deg_parts.append(p)
 
-    deg = rest.strip(" |–—").strip()
+    deg = " ".join(deg_parts).strip(" |–—-")
     if not deg:
         return None
 
@@ -485,12 +593,18 @@ def _parse_plain_resume_text(text: str, source: str = "resume") -> Profile:
                 # common in LinkedIn exports and Word templates.
                 oneliner = _parse_education_oneliner(s)
                 if oneliner:
-                    # Merge dates into last entry if it was just an institution stub
+                    def _norm_inst(s: str) -> str:
+                        return s.strip().lower()
+                    # Merge into the previous stub if it has the same institution and
+                    # no degree yet.  Drop the 'not dates' requirement so a stub that
+                    # already has dates can still accept a missing degree.
                     if (profile.education
                             and not profile.education[-1]["degree"]
-                            and not profile.education[-1]["dates"]
-                            and profile.education[-1]["institution"] == oneliner["institution"]):
-                        profile.education[-1].update(oneliner)
+                            and _norm_inst(profile.education[-1]["institution"]) == _norm_inst(oneliner["institution"])):
+                        # Copy only keys that are currently empty to avoid overwriting good data.
+                        for k, v in oneliner.items():
+                            if not profile.education[-1].get(k):
+                                profile.education[-1][k] = v
                     else:
                         profile.education.append(oneliner)
                 else:

@@ -379,3 +379,198 @@ Master of Science in Information Science and Technology; GPA: 4.0/4.0 Jan. 2022 
         result = _parse_education_oneliner(line)
         assert result is not None
         assert result["location"] == ""
+
+    def test_gpa_with_denominator(self):
+        """GPA in X.X/4.0 format must preserve the slash-denominator in the degree string."""
+        line = "MIT | Ph.D. CS | GPA: 3.9/4.0 | 2015 – 2020"
+        result = _parse_education_oneliner(line)
+        assert result is not None
+        assert result["institution"] == "MIT"
+        # The full fraction must appear in the degree string, not just '3.9'
+        assert "3.9/4.0" in result["degree"], (
+            f"GPA denominator '/4.0' was silently dropped; degree={result['degree']!r}"
+        )
+        assert "2015" in result["dates"] or "2020" in result["dates"]
+
+    def test_cgpa_not_munged_by_gpa_re_substring_match(self):
+        """'CGPA: 8.9/10' must not leave a garbage 'C' fragment as the degree."""
+        line = "IIT Bombay | B.Tech Computer Science | 2010 – 2014 | CGPA: 8.9/10"
+        result = _parse_education_oneliner(line)
+        assert result is not None
+        assert "IIT Bombay" in result["institution"]
+        assert "B.Tech" in result["degree"]
+        # Degree must not start with a bare 'C' from the CGPA substring match
+        assert not result["degree"].startswith("C "), (
+            f"CGPA substring match left garbage in degree: {result['degree']!r}"
+        )
+        # GPA value must appear in degree
+        assert "8.9" in result["degree"], (
+            f"CGPA value lost from degree: {result['degree']!r}"
+        )
+
+    def test_degree_first_format_pipe(self):
+        """When the degree appears before the institution in a pipe-delimited line,
+        the parser must detect and swap them rather than storing the degree as institution."""
+        line = "M.S. Computer Science | Stanford University | 2020 – 2022"
+        result = _parse_education_oneliner(line)
+        assert result is not None
+        # With the degree-first swap, institution must be Stanford, not 'M.S. Computer Science'
+        assert "Stanford" in result["institution"], (
+            f"Degree-first swap failed; institution={result['institution']!r}"
+        )
+        assert "M.S." in result["degree"], (
+            f"Degree not captured after swap; degree={result['degree']!r}"
+        )
+        assert "2020" in result["dates"] or "2022" in result["dates"]
+
+    def test_year_first_format_doublespace(self):
+        """Year-first moderncv format must parse correctly; the digit guard must not
+        block lines that have a date prefix followed by substantive content."""
+        line = "2014–2018  B.Sc. Mathematics  University of Edinburgh"
+        result = _parse_education_oneliner(line)
+        assert result is not None, (
+            "Year-first line was rejected by the digit guard (Strategy 0 missing)"
+        )
+        assert "Edinburgh" in result["institution"] or "University" in result["institution"], (
+            f"Institution not extracted; institution={result['institution']!r}"
+        )
+        assert "B.Sc." in result["degree"] or "Mathematics" in result["degree"]
+        assert "2014" in result["dates"] or "2018" in result["dates"]
+
+    def test_september_full_word_rejected_as_bare_date(self):
+        """A line starting with 'September YYYY' must be treated as a bare date line
+        and return None, not parsed as an institution."""
+        line = "September 2022 – May 2023"
+        result = _parse_education_oneliner(line)
+        assert result is None, (
+            f"'September YYYY' bare date line was incorrectly parsed: {result!r}"
+        )
+
+    def test_may_university_not_rejected_by_month_guard(self):
+        """'May University' must NOT be rejected — 'May' here is part of the name,
+        not a month-only date prefix."""
+        line = "May University | M.S. CS | 2020 – 2022"
+        result = _parse_education_oneliner(line)
+        # The refined guard checks for a digit immediately after the month word.
+        # 'May University' has no digit after 'May', so it should pass.
+        assert result is not None, (
+            "'May University' was wrongly rejected by the month-name guard"
+        )
+        assert "University" in result["institution"]
+
+    def test_comma_separated_institution_first(self):
+        """Comma-delimited format with institution first must parse via Strategy 3."""
+        line = "Stanford University, B.S. CS, 2018 – 2022"
+        result = _parse_education_oneliner(line)
+        assert result is not None, (
+            "Comma-separated format fell through Strategy 3 and returned None"
+        )
+        assert "Stanford" in result["institution"]
+        assert "B.S." in result["degree"]
+        assert "2018" in result["dates"] or "2022" in result["dates"]
+
+    def test_dates_does_not_contain_trailing_junk(self):
+        """When the date field is followed by an additional pipe-separated fragment,
+        that fragment must not appear inside the dates string."""
+        line = "Stanford | B.S. CS | 2020 – 2022 | Honors Program"
+        result = _parse_education_oneliner(line)
+        assert result is not None
+        # Dates must contain only the year range, not 'Honors Program'
+        assert "Honors" not in result["dates"], (
+            f"Trailing junk in dates field: {result['dates']!r}"
+        )
+        assert "2020" in result["dates"] or "2022" in result["dates"]
+
+    def test_doublespace_three_tokens_no_pipe_in_degree(self):
+        """When three double-space-separated tokens are present, the degree field
+        must not contain a pipe separator artifact from the internal rejoin."""
+        line = "University of California, Berkeley  Bachelor of Science  Computer Science  2016 – 2020"
+        result = _parse_education_oneliner(line)
+        assert result is not None
+        assert "Berkeley" in result["institution"]
+        # Degree must not contain ' | ' from the old ' | '.join(raw_parts[1:]) approach
+        assert "|" not in result["degree"], (
+            f"Pipe artifact in degree field: {result['degree']!r}"
+        )
+        assert "Bachelor" in result["degree"] or "Science" in result["degree"]
+        assert "2016" in result["dates"] or "2020" in result["dates"]
+
+    def test_merge_same_institution_stub_normalized(self):
+        """A stub entry (institution only, no degree/dates) followed by a full
+        one-liner for the same institution must merge into a single entry.
+        Institution equality check must be case/whitespace insensitive."""
+        text = """\
+Education
+MIT
+MIT | Ph.D. Machine Learning | 2020 – 2023
+"""
+        profile = _parse_plain_resume_text(text)
+        # The stub 'MIT' and the one-liner 'MIT | ...' must merge, not duplicate.
+        assert len(profile.education) == 1, (
+            f"Same-institution stub should merge into one entry, got "
+            f"{len(profile.education)}: {profile.education}"
+        )
+        edu = profile.education[0]
+        assert "MIT" in edu["institution"]
+        assert "Ph.D." in edu["degree"]
+        assert "2020" in edu["dates"] or "2023" in edu["dates"]
+
+    def test_integration_multiple_education_entries(self):
+        """Two distinct one-liner education entries must both parse and appear
+        as separate items in profile.education."""
+        text = """\
+Education
+MIT | Ph.D. Machine Learning | 2020 – 2023
+University of Texas | B.S. Computer Science | 2016 – 2020
+"""
+        profile = _parse_plain_resume_text(text)
+        assert len(profile.education) == 2, (
+            f"Expected 2 education entries, got {len(profile.education)}: {profile.education}"
+        )
+        insts = [e["institution"] for e in profile.education]
+        assert any("MIT" in i for i in insts), f"MIT not found in {insts}"
+        assert any("Texas" in i for i in insts), f"Texas not found in {insts}"
+        for edu in profile.education:
+            assert edu["degree"], f"Degree empty for {edu['institution']}"
+            assert edu["dates"], f"Dates empty for {edu['institution']}"
+
+    def test_false_positive_experience_line_returns_none(self):
+        """An experience-section line must not be parsed as education."""
+        line = "Data Engineer July 2024 – Present"
+        result = _parse_education_oneliner(line)
+        assert result is None, (
+            f"Experience line incorrectly parsed as education: {result!r}"
+        )
+
+    def test_false_positive_skills_line_returns_none(self):
+        """A comma-delimited skills line must not fire Strategy 3."""
+        line = "Python, TensorFlow, PyTorch, Kafka"
+        result = _parse_education_oneliner(line)
+        # Strategy 3 requires at least one degree or institution keyword among parts;
+        # a plain skills line has neither, so it must return None.
+        assert result is None, (
+            f"Skills line incorrectly parsed as education: {result!r}"
+        )
+
+    def test_false_positive_url_line_returns_none(self):
+        """A URL/contact line must not be parsed as education."""
+        line = "See https://github.com/user"
+        result = _parse_education_oneliner(line)
+        assert result is None, (
+            f"URL line incorrectly parsed as education: {result!r}"
+        )
+
+    def test_doublespace_separated_checks_dates_and_location(self):
+        """Strengthens the existing test_doublespace_separated to also assert
+        that dates and location are correctly populated."""
+        line = "University of Michigan  B.S. Computer Science  2015 – 2019"
+        result = _parse_education_oneliner(line)
+        assert result is not None
+        assert result["institution"] == "University of Michigan"
+        assert "B.S. Computer Science" in result["degree"]
+        assert "2015" in result["dates"] or "2019" in result["dates"], (
+            f"Dates not captured; dates={result['dates']!r}, degree={result['degree']!r}"
+        )
+        assert result["location"] == ""
+        # Degree must not contain a pipe artifact
+        assert "|" not in result["degree"]

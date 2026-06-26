@@ -114,7 +114,13 @@ class _SQLiteProfileStore:
         import sqlite3
         from pathlib import Path
 
-        db_path = Path("~/.tailor_resume/web_profiles.db").expanduser()
+        # Respect HOME env var explicitly so tests can redirect via monkeypatch.
+        # Path.expanduser() ignores HOME on Windows; os.environ handles all platforms.
+        _home_override = os.environ.get("HOME")
+        if _home_override:
+            db_path = Path(_home_override) / ".tailor_resume" / "web_profiles.db"
+        else:
+            db_path = Path("~/.tailor_resume/web_profiles.db").expanduser()
         db_path.parent.mkdir(parents=True, exist_ok=True)
         self._conn = sqlite3.connect(str(db_path))
         self._conn.execute("""

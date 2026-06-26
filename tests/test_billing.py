@@ -14,6 +14,8 @@ import sys
 from pathlib import Path
 from unittest.mock import MagicMock
 
+import pytest
+
 
 # ---------------------------------------------------------------------------
 # Path setup — must happen before any app imports
@@ -26,6 +28,32 @@ _SCRIPTS = _REPO_ROOT / ".claude" / "skills" / "tailor-resume" / "scripts"
 for _p in (_BACKEND, _SCRIPTS):
     if str(_p) not in sys.path:
         sys.path.insert(0, str(_p))
+
+
+# ---------------------------------------------------------------------------
+# Guard: skip entire module when web backend deps are not installed.
+# Run under the SA conda env to execute these tests:
+#   PYTHONPATH=web_app/backend /c/Users/naren/anaconda3/envs/SA/python.exe \
+#     -m pytest tests/test_billing.py tests/test_web_api.py -v
+# ---------------------------------------------------------------------------
+pydantic_settings = pytest.importorskip(
+    "pydantic_settings",
+    reason="web backend deps not installed; run under SA conda env",
+)
+fastapi = pytest.importorskip(
+    "fastapi",
+    reason="web backend deps not installed; run under SA conda env",
+)
+
+# Guard: skip when FastAPI cannot be instantiated (FastAPI/Starlette version mismatch)
+try:
+    from fastapi import FastAPI as _FastAPI
+    _FastAPI()
+except Exception as _fastapi_err:
+    pytest.skip(
+        f"FastAPI not usable in this environment: {_fastapi_err}",
+        allow_module_level=True,
+    )
 
 
 # ---------------------------------------------------------------------------
