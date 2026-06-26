@@ -308,3 +308,118 @@ class TestBuildFromProfile:
         # Template renders successfully (certs injected into CERTIFICATIONS_SECTION placeholder)
         assert output.exists()
         assert output.stat().st_size > 0
+
+
+# ---------------------------------------------------------------------------
+# build_docx_from_profile
+# ---------------------------------------------------------------------------
+from latex_renderer import build_docx_from_profile  # noqa: E402
+
+
+_FULL_PROFILE = {
+    "summary": "Experienced data engineer with 5+ years building scalable pipelines.",
+    "experience": [
+        {
+            "title": "Senior Data Engineer",
+            "company": "Acme Corp",
+            "start": "Jan 2022",
+            "end": "Present",
+            "bullets": [
+                {"text": "Reduced ETL latency 73% via CDC upserts saving $3k/month."},
+                {"text": "Built Spark partitioning strategy cutting shuffle by 40%."},
+            ],
+        }
+    ],
+    "education": [
+        {
+            "institution": "MIT",
+            "degree": "B.S. Computer Science",
+            "dates": "2014 – 2018",
+        }
+    ],
+    "skills": ["Python", "Spark", "Kafka", "Airflow"],
+    "projects": [
+        {
+            "name": "Data Platform",
+            "tech": ["Python", "Delta Lake"],
+            "bullets": [{"text": "Ingested 10M rows/day with 99.9% uptime."}],
+        }
+    ],
+    "certifications": [],
+}
+
+_HEADER = {"name": "Jane Smith", "email": "jane@example.com", "phone": "+1-555-0100"}
+
+
+class TestBuildDocxFromProfile:
+    def test_creates_docx_file(self, tmp_path):
+        out = str(tmp_path / "resume.docx")
+        build_docx_from_profile(_FULL_PROFILE, out, _HEADER)
+        assert (tmp_path / "resume.docx").exists()
+
+    def test_docx_is_nonzero_size(self, tmp_path):
+        out = str(tmp_path / "resume.docx")
+        build_docx_from_profile(_FULL_PROFILE, out, _HEADER)
+        assert (tmp_path / "resume.docx").stat().st_size > 0
+
+    def test_empty_profile_still_writes(self, tmp_path):
+        out = str(tmp_path / "empty.docx")
+        build_docx_from_profile({}, out)
+        assert (tmp_path / "empty.docx").exists()
+
+    def test_profile_with_summary(self, tmp_path):
+        profile = {**_FULL_PROFILE, "experience": [], "projects": [], "education": []}
+        out = str(tmp_path / "summary.docx")
+        build_docx_from_profile(profile, out, _HEADER)
+        assert (tmp_path / "summary.docx").exists()
+
+    def test_profile_with_skills_string_list(self, tmp_path):
+        profile = {"skills": ["Python", "SQL"]}
+        out = str(tmp_path / "skills.docx")
+        build_docx_from_profile(profile, out)
+        assert (tmp_path / "skills.docx").exists()
+
+    def test_creates_parent_dirs(self, tmp_path):
+        out = str(tmp_path / "nested" / "deep" / "resume.docx")
+        build_docx_from_profile({}, out, _HEADER)
+        assert (tmp_path / "nested" / "deep" / "resume.docx").exists()
+
+    def test_contact_line_with_multiple_fields(self, tmp_path):
+        header = {"name": "Bob", "email": "b@b.com", "phone": "+1", "linkedin": "li.com/b", "github": "github.com/b"}
+        out = str(tmp_path / "contact.docx")
+        build_docx_from_profile({}, out, header)
+        assert (tmp_path / "contact.docx").exists()
+
+    def test_role_without_start_date(self, tmp_path):
+        profile = {
+            "experience": [{"title": "Engineer", "company": "Corp", "end": "Dec 2020", "bullets": []}]
+        }
+        out = str(tmp_path / "no_start.docx")
+        build_docx_from_profile(profile, out)
+        assert (tmp_path / "no_start.docx").exists()
+
+    def test_project_with_no_tech(self, tmp_path):
+        profile = {
+            "projects": [{"name": "MyProj", "tech": [], "bullets": [{"text": "Built it."}]}]
+        }
+        out = str(tmp_path / "proj.docx")
+        build_docx_from_profile(profile, out)
+        assert (tmp_path / "proj.docx").exists()
+
+    def test_education_with_school_key_fallback(self, tmp_path):
+        profile = {
+            "education": [{"school": "State U", "degree": "B.S.", "date": "2020"}]
+        }
+        out = str(tmp_path / "edu.docx")
+        build_docx_from_profile(profile, out)
+        assert (tmp_path / "edu.docx").exists()
+
+    def test_no_header_uses_empty(self, tmp_path):
+        out = str(tmp_path / "noheader.docx")
+        build_docx_from_profile(_FULL_PROFILE, out, header=None)
+        assert (tmp_path / "noheader.docx").exists()
+
+    def test_default_output_path(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        build_docx_from_profile({}, "resume.docx")
+        assert (tmp_path / "resume.docx").exists()

@@ -2,6 +2,7 @@
 import json
 import sys
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -316,3 +317,106 @@ class TestCliPipeline:
         ])
         cli.main()
         assert output.exists()
+
+
+# ---------------------------------------------------------------------------
+# cli.py — GitHub artifact path (lines 140-141, 180-269)
+# ---------------------------------------------------------------------------
+
+_FAKE_GH_PROFILE = {
+    "experience": [],
+    "projects": [
+        {
+            "name": "DataPlatform",
+            "tools": ["Python", "Spark"],
+            "bullets": [
+                {
+                    "text": "Reduced ETL latency 73%.",
+                    "metrics": [],
+                    "tools": ["Spark"],
+                    "evidence_source": "github",
+                    "confidence": "medium",
+                }
+            ],
+        }
+    ],
+    "skills": ["Python", "Spark"],
+    "education": [],
+    "certifications": [],
+    "summary": "Data engineer.",
+    "contact": {},
+}
+
+
+class TestCliGitHubArtifact:
+    def test_main_github_artifact_creates_output(self, monkeypatch, tmp_path):
+        import cli
+        import github_ingester  # ensure module is in sys.modules
+
+        output = tmp_path / "resume.tex"
+        monkeypatch.setattr(sys, "argv", [
+            "cli.py",
+            "--jd", str(JD_FILE),
+            "--artifact", "github:octocat",
+            "--output", str(output),
+            "--template", str(TEMPLATE_FILE),
+            "--name", "Jane Smith",
+            "--email", "jane@example.com",
+        ])
+        with patch.object(github_ingester, "inject_github_projects", return_value=_FAKE_GH_PROFILE):
+            cli.main()
+        assert output.exists()
+
+    def test_main_github_artifact_mixed_with_file_artifact(self, monkeypatch, tmp_path):
+        import cli
+        import github_ingester
+
+        output = tmp_path / "resume.tex"
+        monkeypatch.setattr(sys, "argv", [
+            "cli.py",
+            "--jd", str(JD_FILE),
+            "--artifact", "github:octocat",
+            "--artifact", f"{BLOB_FILE}:blob",
+            "--output", str(output),
+            "--template", str(TEMPLATE_FILE),
+        ])
+        with patch.object(github_ingester, "inject_github_projects", return_value=_FAKE_GH_PROFILE):
+            cli.main()
+        assert output.exists()
+
+    def test_main_github_artifact_ingestion_exception_falls_back(self, monkeypatch, tmp_path, capsys):
+        """When inject_github_projects raises, cli falls back to empty profile and continues."""
+        import cli
+        import github_ingester
+
+        output = tmp_path / "resume.tex"
+        monkeypatch.setattr(sys, "argv", [
+            "cli.py",
+            "--jd", str(JD_FILE),
+            "--artifact", "github:octocat",
+            "--output", str(output),
+            "--template", str(TEMPLATE_FILE),
+        ])
+        with patch.object(github_ingester, "inject_github_projects", side_effect=RuntimeError("API rate limit")):
+            cli.main()
+        out = capsys.readouterr().out
+        assert "GitHub ingestion failed" in out
+        assert output.exists()
+
+    def test_main_github_artifact_prints_gap_analysis(self, monkeypatch, tmp_path, capsys):
+        import cli
+        import github_ingester
+
+        output = tmp_path / "resume.tex"
+        monkeypatch.setattr(sys, "argv", [
+            "cli.py",
+            "--jd", str(JD_FILE),
+            "--artifact", "github:octocat",
+            "--output", str(output),
+            "--template", str(TEMPLATE_FILE),
+        ])
+        with patch.object(github_ingester, "inject_github_projects", return_value=_FAKE_GH_PROFILE):
+            cli.main()
+        out = capsys.readouterr().out
+        assert "Gap Analysis" in out
+        assert "Resume written to" in out

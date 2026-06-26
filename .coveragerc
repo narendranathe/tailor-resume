@@ -1,7 +1,9 @@
 [run]
 # Coverage configuration for the tailor-resume skill.
 #
-# All previously-omitted modules (parsers/*, stores/*, claude_vision_extractor)
-# now have integration coverage. As of issue #79 the heavier Claude-vision /
-# multi-backend fallback paths in parsers/pdf_extractor.py are also covered,
-# so no source files are excluded from the report.
+# api_server.py is a standalone ASGI server binary (not a library).
+# It is covered by the separate test-web CI job (tests/test_api_server.py),
+# which requires FastAPI 0.111.x + Python 3.11 and is skipped in the main
+# test job that only installs requirements.txt (no web backend deps).
+omit =
+    *api_server.py

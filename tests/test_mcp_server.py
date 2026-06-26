@@ -2,6 +2,7 @@
 import json
 import sys
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).parent.parent / ".claude/skills/tailor-resume/scripts"))
 
@@ -178,3 +179,42 @@ class TestRunPipeline:
         output = str(tmp_path / "resume.tex")
         result = json.loads(run_pipeline(JD_TEXT, BLOB_TEXT, output_path=output, top_gaps=2))
         assert len(result["gap_report"]["top_missing"]) <= 2
+
+
+# ---------------------------------------------------------------------------
+# ingest_github tool (lines 299-317)
+# ---------------------------------------------------------------------------
+class TestIngestGithub:
+    def test_happy_path_returns_profile(self):
+        import github_ingester
+        from mcp_server import ingest_github
+
+        fake_result = {
+            "experience": [],
+            "projects": [{"name": "Proj", "tools": [], "bullets": []}],
+            "skills": ["Python"],
+            "education": [],
+            "certifications": [],
+            "summary": "",
+            "contact": {},
+        }
+        with patch.object(github_ingester, "inject_github_projects", return_value=fake_result):
+            result = json.loads(ingest_github("octocat"))
+        assert "error" not in result
+
+    def test_generic_exception_returns_error_json(self):
+        import github_ingester
+        from mcp_server import ingest_github
+
+        with patch.object(github_ingester, "inject_github_projects", side_effect=RuntimeError("rate limit")):
+            result = json.loads(ingest_github("octocat"))
+        assert "error" in result
+        assert "rate limit" in result["error"]
+
+    def test_import_error_returns_friendly_message(self):
+        from mcp_server import ingest_github
+
+        with patch.dict(sys.modules, {"github_ingester": None}):
+            result = json.loads(ingest_github("octocat"))
+        assert "error" in result
+        assert "github_ingester" in result["error"].lower() or "dependencies" in result["error"].lower()
