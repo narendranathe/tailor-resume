@@ -13,7 +13,7 @@ from parsers.normalizer import (
     auto_detect_format,
     merge_profiles,
 )
-from resume_types import Profile, Role, Bullet
+from resume_types import Profile, Role
 
 
 # ---------------------------------------------------------------------------

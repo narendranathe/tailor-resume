@@ -4,9 +4,16 @@ import sys
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).parent.parent / ".claude/skills/tailor-resume/scripts"))
 
-from mcp_server import analyze_gap, extract_profile, render_latex, run_pipeline
+# Skip entire module when the mcp package is not installed (test-web CI environment
+# only installs web backend deps; mcp lives in requirements-optional.txt).
+try:
+    from mcp_server import analyze_gap, extract_profile, render_latex, run_pipeline
+except ImportError as _mcp_err:
+    pytest.skip(f"mcp package not available: {_mcp_err}", allow_module_level=True)
 
 FIXTURES = Path(__file__).parent.parent / "fixtures"
 JD_TEXT = (FIXTURES / "sample_jd.txt").read_text(encoding="utf-8")
