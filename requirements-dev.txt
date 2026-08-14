@@ -7,7 +7,10 @@ pytest>=7.4
 pytest-cov>=4.1
 
 # Linter
-ruff>=0.4
+# Pinned below 0.16: ruff 0.16.3 flags 635 pre-existing findings (import
+# sorting, unused noqa, unnecessary pass) that 0.15.20 accepted. Unpin and
+# fix the findings in a dedicated lint PR, not a docs PR.
+ruff>=0.4,<0.16
 
 # Used by tests/fixtures/parsers/_make_pdf.py to regenerate sample.pdf;
 # also imported lazily by tests/test_parsers_integration.py if the binary
