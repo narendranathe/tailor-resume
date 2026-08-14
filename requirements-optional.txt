@@ -10,6 +10,11 @@ openai>=1.0
 # MCP server (Claude Code plugin -- exposes pipeline as tools)
 mcp>=1.0
 
+# Direct dependency of web_app/backend/app/config.py. It used to arrive
+# transitively via mcp (1.28.x pulled pydantic-settings); current mcp does
+# not, so the unpinned install broke `import app.config` in CI.
+pydantic-settings>=2.5.2
+
 # FastAPI browser UI (api_server.py)
 fastapi>=0.110
 uvicorn>=0.29
